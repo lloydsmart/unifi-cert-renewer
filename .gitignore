@@ -1,0 +1,27 @@
+.venv/
+.venv-locks/
+__pycache__/
+*.py[cod]
+
+.env
+config.toml
+secrets/
+
+.vscode/
+
+# Certificate artefacts
+*.csr
+*.csr.pem
+*.crt
+*.crt.pem
+*.cert.pem
+*.certificate.pem
+
+# Private-key / keystore material must never be committed
+*.key
+*.key.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+keystore
