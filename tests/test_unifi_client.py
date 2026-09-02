@@ -8,11 +8,20 @@ from cryptography.x509.oid import NameOID
 
 from certificate import CertificateInspectionError
 from unifi_client import (
+    MAX_ALIAS_CHARS,
+    MAX_DNS_SAN_CHARS,
+    MAX_IP_SAN_CHARS,
+    MAX_KEYSTORE_PATH_CHARS,
     MAX_KEYTOOL_OUTPUT_CHARS,
     MAX_METADATA_VALUE_CHARS,
+    MAX_PASSWORD_ENV_NAME_CHARS,
+    MAX_SAN_ENTRIES,
+    MAX_SUBJECT_DN_CHARS,
+    CertreqCommandError,
     ExpectedAliasNotFoundError,
     KeytoolMetadataError,
     UnexpectedEntryTypeError,
+    build_keytool_certreq_command,
     inspect_unifi_certificate,
     parse_keytool_metadata,
 )
@@ -171,3 +180,364 @@ def test_rejects_overlong_parsed_metadata() -> None:
 
     with pytest.raises(KeytoolMetadataError, match="exceeds the size limit"):
         parse_keytool_metadata(output)
+
+
+def test_builds_exact_deterministic_keytool_certreq_argv() -> None:
+    argv = build_keytool_certreq_command(
+        alias="unifi",
+        keystore_path="/config/data/keystore",
+        password_env_name="UNIFI_KEYSTORE_PASSWORD",
+        subject="CN=controller.example.internal",
+        dns_sans=("controller.example.internal", "alternate.example.internal"),
+        ip_sans=("192.0.2.10", "2001:0db8::10"),
+    )
+
+    assert argv == (
+        "keytool",
+        "-certreq",
+        "-alias",
+        "unifi",
+        "-keystore",
+        "/config/data/keystore",
+        "-storepass:env",
+        "UNIFI_KEYSTORE_PASSWORD",
+        "-keypass:env",
+        "UNIFI_KEYSTORE_PASSWORD",
+        "-dname",
+        "CN=controller.example.internal",
+        "-ext",
+        "SAN=DNS:controller.example.internal,DNS:alternate.example.internal,"
+        "IP:192.0.2.10,IP:2001:db8::10",
+        "-rfc",
+    )
+    assert "-rfc" in argv
+    assert "-file" not in argv
+
+
+def test_password_value_cannot_appear_in_certreq_argv() -> None:
+    password_value = "synthetic password that is not an environment name"
+
+    argv = build_keytool_certreq_command(
+        alias="unifi",
+        keystore_path="/config/data/keystore",
+        password_env_name="UNIFI_KEYSTORE_PASSWORD",
+        subject="CN=unifi.test",
+        dns_sans=("unifi.test",),
+    )
+
+    assert password_value not in argv
+    assert argv[argv.index("-storepass:env") + 1] == "UNIFI_KEYSTORE_PASSWORD"
+    assert argv[argv.index("-keypass:env") + 1] == "UNIFI_KEYSTORE_PASSWORD"
+
+
+def test_requires_at_least_one_san() -> None:
+    with pytest.raises(CertreqCommandError, match="at least one"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"alias": ""}, "alias.*empty"),
+        ({"keystore_path": ""}, "path.*empty"),
+        ({"subject": ""}, "subject.*empty"),
+    ],
+)
+def test_rejects_empty_required_certreq_inputs(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    arguments: dict[str, object] = {
+        "alias": "unifi",
+        "keystore_path": "/config/data/keystore",
+        "password_env_name": "UNIFI_KEYSTORE_PASSWORD",
+        "subject": "CN=unifi.test",
+        "dns_sans": ("unifi.test",),
+    }
+    arguments.update(overrides)
+
+    with pytest.raises(CertreqCommandError, match=message):
+        build_keytool_certreq_command(**arguments)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "dns_name",
+    [
+        "",
+        "contains a space.test",
+        "-starts-with-hyphen.test",
+        "ends-with-hyphen-.test",
+        "two..dots.test",
+        f"{'a' * 64}.test",
+        "comma,test",
+        "täst.test",
+    ],
+)
+def test_rejects_invalid_dns_san(dns_name: str) -> None:
+    with pytest.raises(CertreqCommandError, match="DNS SAN"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=(dns_name,),
+        )
+
+
+@pytest.mark.parametrize("address", ["", "192.0.2.999", "not-an-ip", "fe80::1%eth0"])
+def test_rejects_invalid_ip_san(address: str) -> None:
+    with pytest.raises(CertreqCommandError, match="IP SAN"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            ip_sans=(address,),
+        )
+
+
+def test_rejects_relative_keystore_path() -> None:
+    with pytest.raises(CertreqCommandError, match="absolute POSIX path"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=("unifi.test",),
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"alias": "uni\nfi"}, "alias.*control"),
+        ({"keystore_path": "/config/\x1bkeystore"}, "path.*control"),
+        ({"subject": "CN=unifi\rtest"}, "subject.*control"),
+        ({"dns_sans": ("unifi\ntest",)}, "DNS SAN.*control"),
+        ({"ip_sans": ("192.0.2.1\t",)}, "IP SAN.*control"),
+    ],
+)
+def test_rejects_control_characters_in_certreq_inputs(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    arguments: dict[str, object] = {
+        "alias": "unifi",
+        "keystore_path": "/config/data/keystore",
+        "password_env_name": "UNIFI_KEYSTORE_PASSWORD",
+        "subject": "CN=unifi.test",
+        "dns_sans": ("unifi.test",),
+    }
+    arguments.update(overrides)
+
+    with pytest.raises(CertreqCommandError, match=message):
+        build_keytool_certreq_command(**arguments)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "unsafe_character",
+    [
+        "\u202e",
+        "\u2066",
+        "\u2028",
+        "\u2029",
+        "\ud800",
+    ],
+    ids=[
+        "right-to-left-override",
+        "left-to-right-isolate",
+        "line-separator",
+        "paragraph-separator",
+        "lone-surrogate",
+    ],
+)
+@pytest.mark.parametrize(
+    ("field", "template"),
+    [
+        ("alias", "uni{}fi"),
+        ("keystore_path", "/config/{}keystore"),
+        ("subject", "CN=unifi{}test"),
+    ],
+)
+def test_rejects_unsafe_unicode_categories_in_text_inputs(
+    unsafe_character: str,
+    field: str,
+    template: str,
+) -> None:
+    arguments = {
+        "alias": "unifi",
+        "keystore_path": "/config/data/keystore",
+        "password_env_name": "UNIFI_KEYSTORE_PASSWORD",
+        "subject": "CN=unifi.test",
+        "dns_sans": ("unifi.test",),
+    }
+    arguments[field] = template.format(unsafe_character)
+
+    with pytest.raises(CertreqCommandError, match="contains control characters"):
+        build_keytool_certreq_command(**arguments)
+
+
+def test_permits_normal_printable_unicode_text() -> None:
+    argv = build_keytool_certreq_command(
+        alias="unifi-猫",
+        keystore_path="/config/証明書/keystore",
+        password_env_name="UNIFI_KEYSTORE_PASSWORD",
+        subject="CN=contrôleur.test,O=Café",
+        dns_sans=("unifi.test",),
+    )
+
+    assert "unifi-猫" in argv
+    assert "/config/証明書/keystore" in argv
+    assert "CN=contrôleur.test,O=Café" in argv
+
+
+@pytest.mark.parametrize(
+    "environment_name",
+    ["", "9PASSWORD", "PASSWORD-NAME", "PASSWORD VALUE", "PASSWORD=value"],
+)
+def test_rejects_invalid_password_environment_variable_name(
+    environment_name: str,
+) -> None:
+    with pytest.raises(CertreqCommandError, match="POSIX identifier"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name=environment_name,
+            subject="CN=unifi.test",
+            dns_sans=("unifi.test",),
+        )
+
+
+def test_rejects_overlong_password_environment_variable_name() -> None:
+    with pytest.raises(CertreqCommandError, match="environment-variable.*size"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="P" * (MAX_PASSWORD_ENV_NAME_CHARS + 1),
+            subject="CN=unifi.test",
+            dns_sans=("unifi.test",),
+        )
+
+
+def test_rejects_overlong_dns_san() -> None:
+    with pytest.raises(CertreqCommandError, match="DNS SAN.*size"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=("a" * (MAX_DNS_SAN_CHARS + 1),),
+        )
+
+
+def test_rejects_overlong_ip_san() -> None:
+    with pytest.raises(CertreqCommandError, match="IP SAN.*size"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            ip_sans=("1" * (MAX_IP_SAN_CHARS + 1),),
+        )
+
+
+def test_rejects_more_than_maximum_dns_sans() -> None:
+    dns_sans = tuple(f"host-{index}.test" for index in range(MAX_SAN_ENTRIES + 1))
+
+    with pytest.raises(CertreqCommandError, match="DNS SAN count.*size"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=dns_sans,
+        )
+
+
+def test_rejects_combined_san_count_over_maximum() -> None:
+    dns_count = MAX_SAN_ENTRIES // 2
+    ip_count = MAX_SAN_ENTRIES - dns_count + 1
+    dns_sans = tuple(f"host-{index}.test" for index in range(dns_count))
+    ip_sans = tuple(f"2001:db8::{index + 1:x}" for index in range(ip_count))
+
+    with pytest.raises(CertreqCommandError, match="SAN count.*size"):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=dns_sans,
+            ip_sans=ip_sans,
+        )
+
+
+@pytest.mark.parametrize(
+    ("dns_sans", "ip_sans", "message"),
+    [
+        (("unifi.test", "UNIFI.TEST"), (), "duplicate DNS"),
+        ((), ("2001:db8::1", "2001:0db8:0:0:0:0:0:1"), "duplicate IP"),
+    ],
+)
+def test_rejects_semantically_duplicate_sans(
+    dns_sans: tuple[str, ...],
+    ip_sans: tuple[str, ...],
+    message: str,
+) -> None:
+    with pytest.raises(CertreqCommandError, match=message):
+        build_keytool_certreq_command(
+            alias="unifi",
+            keystore_path="/config/data/keystore",
+            password_env_name="UNIFI_KEYSTORE_PASSWORD",
+            subject="CN=unifi.test",
+            dns_sans=dns_sans,
+            ip_sans=ip_sans,
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"alias": "a" * (MAX_ALIAS_CHARS + 1)}, "alias.*size"),
+        (
+            {"keystore_path": "/" + "k" * MAX_KEYSTORE_PATH_CHARS},
+            "path.*size",
+        ),
+        ({"subject": "C" * (MAX_SUBJECT_DN_CHARS + 1)}, "subject.*size"),
+    ],
+)
+def test_rejects_overlong_certreq_inputs(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    arguments: dict[str, object] = {
+        "alias": "unifi",
+        "keystore_path": "/config/data/keystore",
+        "password_env_name": "UNIFI_KEYSTORE_PASSWORD",
+        "subject": "CN=unifi.test",
+        "dns_sans": ("unifi.test",),
+    }
+    arguments.update(overrides)
+
+    with pytest.raises(CertreqCommandError, match=message):
+        build_keytool_certreq_command(**arguments)  # type: ignore[arg-type]
+
+
+def test_shell_metacharacters_remain_literal_argv_data() -> None:
+    alias = "unifi;echo-not-executed"
+    subject = "CN=$(echo-not-executed)"
+
+    argv = build_keytool_certreq_command(
+        alias=alias,
+        keystore_path="/config/data/keystore",
+        password_env_name="UNIFI_KEYSTORE_PASSWORD",
+        subject=subject,
+        dns_sans=("unifi.test",),
+    )
+
+    assert argv[argv.index("-alias") + 1] == alias
+    assert argv[argv.index("-dname") + 1] == subject
