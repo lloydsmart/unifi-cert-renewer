@@ -7,9 +7,11 @@ Network Application with an internal OPNsense certificate authority.
 
 **Initial development.**
 
-The repository currently contains project, dependency, CI, and security
-scaffolding. Certificate inspection, CSR generation, signing, installation, and
-automated renewal are not yet implemented.
+The repository currently implements read-only parsing of captured Java
+`keytool` metadata and public DER X.509 certificates. It does not execute
+`keytool`, access a keystore, or provide Docker orchestration. CSR generation,
+signing, installation, live verification, and automated renewal are not yet
+implemented.
 
 The intended implementation will be developed incrementally and validated
 against a real UniFi deployment before unattended renewal is enabled.
@@ -54,8 +56,8 @@ The private key must not be exported from UniFi during routine renewal.
 
 ## Planned Development Stages
 
-1. Read-only inspection of the current UniFi HTTPS certificate and existing
-   keystore entry.
+1. Read-only inspection of captured UniFi HTTPS certificate and keystore-entry
+   data. The parsing layer is implemented; command orchestration is not.
 2. CSR generation using the existing UniFi private key.
 3. Cryptographic CSR validation.
 4. Signing through the OPNsense Trust API.
@@ -67,6 +69,33 @@ The private key must not be exported from UniFi during routine renewal.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.
+
+## Verified Deployment Baseline — 2026-09-02
+
+The read-only production observations supplied for issue #2 establish this
+LinuxServer UniFi baseline:
+
+* container: `unifi-network-application`
+* image: `lscr.io/linuxserver/unifi-network-application:latest`
+* Java: OpenJDK 25.0.2
+* `keytool`: `/usr/bin/keytool`
+* keystore: `/config/data/keystore`
+* keystore type and provider: PKCS12 / SUN
+* HTTPS alias and entry type: `unifi` / `PrivateKeyEntry`
+* certificate chain length: 1
+* subject and issuer: `CN=unifi` / `CN=unifi`
+* serial number: `808f918252ee91f0`
+* validity: 2024-07-23T15:09:36Z through 2034-07-21T15:09:36Z
+* certificate SHA-256:
+  `3759aa48e57eddf62e30dfc0f94bf01a74ba16fd12dfa7e58115dde73b5544d9`
+* public key: RSA 4096
+* SAN: `DNS:unifi`
+* X.509 SKI (public hex): `efb40cff87c493deeece7ff11e80ee0b2c23da7d`
+* DER SubjectPublicKeyInfo SHA-256:
+  `95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`
+
+These observations describe the deployment examined for the issue; they are
+not assumptions that every UniFi installation has the same layout or metadata.
 
 ## Security Principles
 
