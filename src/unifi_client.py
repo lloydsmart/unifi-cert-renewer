@@ -1,12 +1,28 @@
-"""Read-only parsing at the UniFi integration boundary."""
+"""Read-only parsing and command construction at the UniFi boundary."""
 
+import re
+import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
+from ipaddress import ip_address
+from pathlib import PurePosixPath
 
 from certificate import CertificateInfo, inspect_certificate
 
 MAX_KEYTOOL_OUTPUT_CHARS = 1024 * 1024
 MAX_METADATA_VALUE_CHARS = 256
 EXPECTED_ENTRY_TYPE = "PrivateKeyEntry"
+MAX_ALIAS_CHARS = 256
+MAX_KEYSTORE_PATH_CHARS = 4096
+MAX_SUBJECT_DN_CHARS = 4096
+MAX_DNS_SAN_CHARS = 253
+MAX_IP_SAN_CHARS = 64
+MAX_SAN_ENTRIES = 100
+MAX_PASSWORD_ENV_NAME_CHARS = 128
+
+_ENVIRONMENT_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_DNS_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
+_UNSAFE_TEXT_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 class KeytoolMetadataError(ValueError):
@@ -19,6 +35,10 @@ class ExpectedAliasNotFoundError(KeytoolMetadataError):
 
 class UnexpectedEntryTypeError(KeytoolMetadataError):
     """Raised when an alias is not backed by a private-key entry."""
+
+
+class CertreqCommandError(ValueError):
+    """Raised when keytool certreq command inputs are unsafe or invalid."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +65,58 @@ class UnifiCertificateInspection:
     keystore: KeystoreMetadata
     alias: AliasMetadata
     certificate: CertificateInfo
+
+
+def build_keytool_certreq_command(
+    *,
+    alias: str,
+    keystore_path: str,
+    password_env_name: str,
+    subject: str,
+    dns_sans: Sequence[str] = (),
+    ip_sans: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Build immutable argv for a future, direct ``keytool -certreq`` call.
+
+    SANs are emitted deterministically: DNS entries in caller order, followed by
+    IP entries in caller order with IP text canonicalized by ``ipaddress``.
+    Semantically duplicate entries are rejected. The password
+    environment-variable name is included, never its value.
+    """
+
+    _validate_bounded_text(alias, "alias", MAX_ALIAS_CHARS)
+    _validate_keystore_path(keystore_path)
+    _validate_bounded_text(subject, "subject DN", MAX_SUBJECT_DN_CHARS)
+    _validate_password_env_name(password_env_name)
+
+    validated_dns_sans = _validate_dns_sans(dns_sans)
+    validated_ip_sans = _validate_ip_sans(ip_sans)
+    if len(validated_dns_sans) + len(validated_ip_sans) > MAX_SAN_ENTRIES:
+        raise CertreqCommandError("SAN count exceeds the size limit")
+    if not validated_dns_sans and not validated_ip_sans:
+        raise CertreqCommandError("at least one DNS or IP SAN is required")
+
+    san_parts = [f"DNS:{name}" for name in validated_dns_sans]
+    san_parts.extend(f"IP:{address}" for address in validated_ip_sans)
+    san_extension = f"SAN={','.join(san_parts)}"
+
+    return (
+        "keytool",
+        "-certreq",
+        "-alias",
+        alias,
+        "-keystore",
+        keystore_path,
+        "-storepass:env",
+        password_env_name,
+        "-keypass:env",
+        password_env_name,
+        "-dname",
+        subject,
+        "-ext",
+        san_extension,
+        "-rfc",
+    )
 
 
 def parse_keytool_metadata(
@@ -170,3 +242,91 @@ def _validate_metadata_value(value: str, label: str) -> None:
         raise KeytoolMetadataError(f"{label} exceeds the size limit")
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise KeytoolMetadataError(f"{label} contains control characters")
+
+
+def _validate_bounded_text(value: str, label: str, maximum: int) -> None:
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be text")
+    if not value:
+        raise CertreqCommandError(f"{label} must not be empty")
+    if len(value) > maximum:
+        raise CertreqCommandError(f"{label} exceeds the size limit")
+    if any(
+        unicodedata.category(character) in _UNSAFE_TEXT_CATEGORIES
+        for character in value
+    ):
+        raise CertreqCommandError(f"{label} contains control characters")
+
+
+def _validate_keystore_path(keystore_path: str) -> None:
+    _validate_bounded_text(
+        keystore_path,
+        "keystore path",
+        MAX_KEYSTORE_PATH_CHARS,
+    )
+    path = PurePosixPath(keystore_path)
+    if not path.is_absolute():
+        raise CertreqCommandError("keystore path must be an absolute POSIX path")
+    if ".." in path.parts:
+        raise CertreqCommandError("keystore path must not contain parent traversal")
+
+
+def _validate_password_env_name(password_env_name: str) -> None:
+    if not isinstance(password_env_name, str):
+        raise TypeError("password environment-variable name must be text")
+    if len(password_env_name) > MAX_PASSWORD_ENV_NAME_CHARS:
+        raise CertreqCommandError(
+            "password environment-variable name exceeds the size limit"
+        )
+    if _ENVIRONMENT_NAME_RE.fullmatch(password_env_name) is None:
+        raise CertreqCommandError(
+            "password environment-variable name must be a POSIX identifier"
+        )
+
+
+def _validate_dns_sans(dns_sans: Sequence[str]) -> tuple[str, ...]:
+    values = _validate_san_sequence(dns_sans, "DNS SAN")
+    validated: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        _validate_bounded_text(value, "DNS SAN", MAX_DNS_SAN_CHARS)
+        try:
+            value.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise CertreqCommandError("DNS SAN must be an ASCII DNS name") from exc
+        labels = value.split(".")
+        if any(_DNS_LABEL_RE.fullmatch(label) is None for label in labels):
+            raise CertreqCommandError("DNS SAN is not a valid DNS name")
+        canonical = value.lower()
+        if canonical in seen:
+            raise CertreqCommandError("duplicate DNS SAN is not allowed")
+        seen.add(canonical)
+        validated.append(value)
+    return tuple(validated)
+
+
+def _validate_ip_sans(ip_sans: Sequence[str]) -> tuple[str, ...]:
+    values = _validate_san_sequence(ip_sans, "IP SAN")
+    validated: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        _validate_bounded_text(value, "IP SAN", MAX_IP_SAN_CHARS)
+        if "%" in value:
+            raise CertreqCommandError("IP SAN must not contain a scope identifier")
+        try:
+            canonical = str(ip_address(value))
+        except ValueError as exc:
+            raise CertreqCommandError("IP SAN is not a valid IP address") from exc
+        if canonical in seen:
+            raise CertreqCommandError("duplicate IP SAN is not allowed")
+        seen.add(canonical)
+        validated.append(canonical)
+    return tuple(validated)
+
+
+def _validate_san_sequence(values: Sequence[str], label: str) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError(f"{label} values must be a sequence of text values")
+    if len(values) > MAX_SAN_ENTRIES:
+        raise CertreqCommandError(f"{label} count exceeds the size limit")
+    return tuple(values)

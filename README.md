@@ -8,10 +8,17 @@ Network Application with an internal OPNsense certificate authority.
 **Initial development.**
 
 The repository currently implements read-only parsing of captured Java
-`keytool` metadata and public DER X.509 certificates. It does not execute
-`keytool`, access a keystore, or provide Docker orchestration. CSR generation,
-signing, installation, live verification, and automated renewal are not yet
-implemented.
+`keytool` metadata, public DER X.509 certificates, and public PEM PKCS#10 CSRs.
+CSR inspection cryptographically verifies proof-of-possession and can enforce
+public-key continuity using a DER SubjectPublicKeyInfo SHA-256 fingerprint.
+The UniFi integration can construct a validated, deterministic
+`keytool -certreq` argument vector with explicit DNS/IP SANs and environment
+variable password modifiers.
+
+The project does not execute `keytool`, access a keystore, or provide Docker or
+host orchestration. No production certificate has been requested or installed.
+OPNsense signing, certificate installation, live verification, and automated
+renewal remain future work.
 
 The intended implementation will be developed incrementally and validated
 against a real UniFi deployment before unattended renewal is enabled.
@@ -58,8 +65,11 @@ The private key must not be exported from UniFi during routine renewal.
 
 1. Read-only inspection of captured UniFi HTTPS certificate and keystore-entry
    data. The parsing layer is implemented; command orchestration is not.
-2. CSR generation using the existing UniFi private key.
-3. Cryptographic CSR validation.
+2. CSR command construction using the existing UniFi private key. Argument
+   construction and input validation are implemented; execution is not.
+3. Cryptographic CSR validation. Public PEM parsing, proof-of-possession
+   verification, requested SAN/SKI inspection, and SPKI continuity validation
+   are implemented.
 4. Signing through the OPNsense Trust API.
 5. Validation of the issued certificate.
 6. Installation against the existing UniFi keypair.

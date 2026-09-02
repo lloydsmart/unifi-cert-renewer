@@ -2,22 +2,17 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from hashlib import sha256
 
 from cryptography import x509
 from cryptography.exceptions import UnsupportedAlgorithm
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import (
-    dh,
-    dsa,
-    ec,
-    ed448,
-    ed25519,
-    rsa,
-    x448,
-    x25519,
-)
+from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import ExtensionOID
+
+from public_key import (
+    UnsupportedPublicKeyError,
+    public_key_algorithm_and_size,
+    spki_sha256,
+)
 
 MAX_CERTIFICATE_DER_BYTES = 1024 * 1024
 
@@ -63,12 +58,13 @@ def inspect_certificate(certificate_der: bytes) -> CertificateInfo:
         dns_sans, ip_sans = _subject_alternative_names(certificate)
         subject_key_identifier = _subject_key_identifier(certificate)
         signature_hash = certificate.signature_hash_algorithm
-        subject_public_key_info = public_key.public_bytes(
-            serialization.Encoding.DER,
-            serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
+        fingerprint = spki_sha256(public_key)
     except CertificateInspectionError:
         raise
+    except UnsupportedPublicKeyError as exc:
+        raise CertificateInspectionError(
+            "unsupported certificate public-key algorithm"
+        ) from exc
     except UnsupportedAlgorithm as exc:
         raise CertificateInspectionError(
             "certificate uses an unsupported algorithm"
@@ -83,7 +79,7 @@ def inspect_certificate(certificate_der: bytes) -> CertificateInfo:
         not_valid_before=_not_valid_before_utc(certificate),
         not_valid_after=_not_valid_after_utc(certificate),
         certificate_sha256=certificate.fingerprint(hashes.SHA256()).hex(),
-        spki_sha256=sha256(subject_public_key_info).hexdigest(),
+        spki_sha256=fingerprint,
         public_key_algorithm=public_key_algorithm,
         public_key_size=public_key_size,
         dns_sans=dns_sans,
@@ -95,23 +91,12 @@ def inspect_certificate(certificate_der: bytes) -> CertificateInfo:
 
 
 def _public_key_info(public_key: object) -> tuple[str, int | None]:
-    if isinstance(public_key, rsa.RSAPublicKey):
-        return "RSA", public_key.key_size
-    if isinstance(public_key, dsa.DSAPublicKey):
-        return "DSA", public_key.key_size
-    if isinstance(public_key, ec.EllipticCurvePublicKey):
-        return "EC", public_key.key_size
-    if isinstance(public_key, ed25519.Ed25519PublicKey):
-        return "Ed25519", None
-    if isinstance(public_key, ed448.Ed448PublicKey):
-        return "Ed448", None
-    if isinstance(public_key, x25519.X25519PublicKey):
-        return "X25519", None
-    if isinstance(public_key, x448.X448PublicKey):
-        return "X448", None
-    if isinstance(public_key, dh.DHPublicKey):
-        return "DH", public_key.key_size
-    raise CertificateInspectionError("unsupported certificate public-key algorithm")
+    try:
+        return public_key_algorithm_and_size(public_key)
+    except UnsupportedPublicKeyError as exc:
+        raise CertificateInspectionError(
+            "unsupported certificate public-key algorithm"
+        ) from exc
 
 
 def _subject_alternative_names(
