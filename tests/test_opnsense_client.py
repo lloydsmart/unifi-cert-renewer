@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 
 import opnsense_client
+import secure_file
 from csr import CSRInfo, inspect_csr
 
 BASE_URL = "https://opnsense.test:8443"
@@ -33,14 +34,13 @@ def json_response(value: object) -> JSONResponse:
 
 @pytest.fixture(autouse=True)
 def credential_files(monkeypatch, tmp_path) -> None:
-    key_file = tmp_path / "api-key"
-    secret_file = tmp_path / "api-secret"
+    monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(tmp_path))
+    key_file = tmp_path / opnsense_client.OPNSENSE_API_KEY_NAME
+    secret_file = tmp_path / opnsense_client.OPNSENSE_API_SECRET_NAME
     key_file.write_text("test-api-key", encoding="utf-8")
     secret_file.write_text("test-api-secret", encoding="utf-8")
     key_file.chmod(0o600)
     secret_file.chmod(0o600)
-    monkeypatch.setenv("OPNSENSE_API_KEY_FILE", str(key_file))
-    monkeypatch.setenv("OPNSENSE_API_SECRET_FILE", str(secret_file))
 
 
 @pytest.fixture(scope="module")
@@ -175,6 +175,24 @@ def test_uses_basic_authentication_and_verified_tls(monkeypatch) -> None:
     assert captured["ssl_context"].check_hostname is True
     assert captured["ssl_context"].verify_mode == ssl.CERT_REQUIRED
     assert captured["ssl_context"].minimum_version == ssl.TLSVersion.TLSv1_2
+
+
+def test_client_passes_only_optional_tls_ca_name(monkeypatch) -> None:
+    context = object()
+    calls: list[str | None] = []
+    monkeypatch.setattr(
+        opnsense_client,
+        "create_client_tls_context",
+        lambda *, ca_name: calls.append(ca_name) or context,
+    )
+
+    client = opnsense_client.OPNsenseClient(
+        BASE_URL,
+        tls_ca_name="opnsense-ca.pem",
+    )
+
+    assert calls == ["opnsense-ca.pem"]
+    assert client._ssl_context is context
 
 
 @pytest.mark.parametrize(
@@ -568,10 +586,9 @@ def test_rejects_malformed_certificate_retrieval(
 def test_rejects_unsafe_secret_content_without_leaking_value(
     monkeypatch, tmp_path, contents, message
 ) -> None:
-    path = tmp_path / "credential"
+    path = tmp_path / opnsense_client.OPNSENSE_API_KEY_NAME
     path.write_bytes(contents)
     path.chmod(0o600)
-    monkeypatch.setenv("OPNSENSE_API_KEY_FILE", str(path))
 
     with pytest.raises(opnsense_client.OPNsenseAPIError, match=message) as raised:
         opnsense_client.OPNsenseClient(BASE_URL)
@@ -582,7 +599,7 @@ def test_rejects_unsafe_secret_content_without_leaking_value(
 
 @pytest.mark.parametrize("mode", [0o600, 0o400])
 def test_accepts_private_credential_file_modes(tmp_path, mode) -> None:
-    credential_path = tmp_path / "api-key"
+    credential_path = tmp_path / opnsense_client.OPNSENSE_API_KEY_NAME
     credential_path.chmod(mode)
 
     opnsense_client.OPNsenseClient(BASE_URL)
@@ -600,7 +617,7 @@ def test_accepts_private_credential_file_modes(tmp_path, mode) -> None:
 def test_rejects_readable_credential_file_modes_without_disclosing_path(
     tmp_path, mode, message
 ) -> None:
-    credential_path = tmp_path / "api-key"
+    credential_path = tmp_path / opnsense_client.OPNSENSE_API_KEY_NAME
     credential_path.chmod(mode)
 
     with pytest.raises(opnsense_client.OPNsenseAPIError, match=message) as raised:
@@ -609,9 +626,15 @@ def test_rejects_readable_credential_file_modes_without_disclosing_path(
     assert str(credential_path) not in str(raised.value)
 
 
-def test_direct_environment_credentials_are_not_supported(monkeypatch) -> None:
-    monkeypatch.delenv("OPNSENSE_API_KEY_FILE")
+def test_environment_paths_and_direct_credentials_cannot_redirect_fixed_names(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPNSENSE_API_KEY_FILE", "/etc/passwd")
+    monkeypatch.setenv("OPNSENSE_API_SECRET_FILE", "../outside")
     monkeypatch.setenv("OPNSENSE_API_KEY", "must-not-be-used")
+    monkeypatch.setenv("OPNSENSE_API_SECRET", "must-not-be-used")
 
-    with pytest.raises(opnsense_client.OPNsenseAPIError, match="KEY_FILE must be set"):
-        opnsense_client.OPNsenseClient(BASE_URL)
+    authorization = opnsense_client.OPNsenseClient(BASE_URL)._authorization
+
+    expected = base64.b64encode(b"test-api-key:test-api-secret").decode("ascii")
+    assert authorization == f"Basic {expected}"

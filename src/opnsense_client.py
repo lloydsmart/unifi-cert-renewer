@@ -3,7 +3,6 @@
 import base64
 import json
 import math
-import os
 import re
 import ssl
 import unicodedata
@@ -24,7 +23,6 @@ CERTIFICATE_PATH = "/api/trust/cert/generate_file/{uuid}/crt"
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_CERTIFICATE_PEM_BYTES = 64 * 1024
 MAX_SECRET_FILE_BYTES = 16 * 1024
-MAX_SECRET_PATH_CHARS = 4096
 MAX_DESCRIPTION_CHARS = 255
 MAX_SUBJECT_CHARS = 4096
 MAX_SAN_ENTRIES = 100
@@ -33,6 +31,8 @@ MAX_LIFETIME_DAYS = 397
 
 ALLOWED_DIGESTS = frozenset({"sha256", "sha384", "sha512"})
 SUPPORTED_RSA_KEY_SIZES = frozenset({2048, 3072, 4096})
+OPNSENSE_API_KEY_NAME = "opnsense-api-key"
+OPNSENSE_API_SECRET_NAME = "opnsense-api-secret"
 
 _CA_REFERENCE_RE = re.compile(r"[0-9a-f]{13}\Z")
 _DNS_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
@@ -129,20 +129,10 @@ def _validate_timeout(timeout: float) -> float:
     return float(timeout)
 
 
-def _read_secret_file(configured_path: str, source_name: str) -> str:
-    if (
-        not configured_path
-        or len(configured_path) > MAX_SECRET_PATH_CHARS
-        or any(
-            unicodedata.category(character) in _UNSAFE_TEXT_CATEGORIES
-            for character in configured_path
-        )
-    ):
-        raise OPNsenseAPIError(f"{source_name} must name a safe path")
-
+def _read_secret_file(secret_name: str, source_name: str) -> str:
     try:
         with open_secure_file(
-            configured_path,
+            secret_name,
             source_name=source_name,
             require_private=True,
         ) as secret_file:
@@ -170,13 +160,6 @@ def _read_secret_file(configured_path: str, source_name: str) -> str:
     if secret.splitlines() != [secret]:
         raise OPNsenseAPIError(f"{source_name} must contain exactly one line")
     return secret
-
-
-def _load_file_credential(file_name: str) -> str:
-    configured_path = os.environ.get(file_name)
-    if configured_path is None:
-        raise OPNsenseAPIError(f"{file_name} must be set")
-    return _read_secret_file(configured_path, file_name)
 
 
 def _validate_safe_text(value: str, label: str, maximum: int) -> str:
@@ -281,13 +264,13 @@ class OPNsenseClient:
         base_url: str,
         *,
         timeout: float = 30,
-        tls_ca_file: str | None = None,
+        tls_ca_name: str | None = None,
     ) -> None:
         self.base_url = validate_base_url(base_url)
         self.timeout = _validate_timeout(timeout)
         self._authorization = self._load_authorization()
         try:
-            self._ssl_context = create_client_tls_context(cafile=tls_ca_file)
+            self._ssl_context = create_client_tls_context(ca_name=tls_ca_name)
         except (OSError, ssl.SSLError, TLSConfigurationError):
             raise OPNsenseAPIError(
                 "OPNsense TLS trust could not be configured"
@@ -295,8 +278,11 @@ class OPNsenseClient:
 
     @staticmethod
     def _load_authorization() -> str:
-        api_key = _load_file_credential("OPNSENSE_API_KEY_FILE")
-        api_secret = _load_file_credential("OPNSENSE_API_SECRET_FILE")
+        api_key = _read_secret_file(OPNSENSE_API_KEY_NAME, "OPNsense API key")
+        api_secret = _read_secret_file(
+            OPNSENSE_API_SECRET_NAME,
+            "OPNsense API secret",
+        )
         credentials = f"{api_key}:{api_secret}".encode()
         return "Basic " + base64.b64encode(credentials).decode("ascii")
 

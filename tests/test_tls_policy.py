@@ -7,11 +7,17 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+import secure_file
 from tls_policy import (
     MAX_TLS_CA_FILE_BYTES,
     TLSConfigurationError,
     create_client_tls_context,
 )
+
+
+@pytest.fixture(autouse=True)
+def trusted_root(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(tmp_path))
 
 
 def test_context_requires_verified_tls_1_2_or_newer() -> None:
@@ -42,7 +48,7 @@ def test_context_loads_configured_public_ca(tmp_path) -> None:
     ca_file.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
     ca_file.chmod(0o644)
 
-    context = create_client_tls_context(cafile=str(ca_file))
+    context = create_client_tls_context(ca_name=ca_file.name)
 
     assert context.cert_store_stats()["x509_ca"] == 1
 
@@ -53,9 +59,17 @@ def test_context_rejects_unsafe_or_oversized_ca_file(tmp_path) -> None:
     ca_file.chmod(0o602)
 
     with pytest.raises(TLSConfigurationError, match="world-writable"):
-        create_client_tls_context(cafile=str(ca_file))
+        create_client_tls_context(ca_name=ca_file.name)
 
     ca_file.write_bytes(b"x" * (MAX_TLS_CA_FILE_BYTES + 1))
     ca_file.chmod(0o600)
     with pytest.raises(TLSConfigurationError, match="size limit"):
-        create_client_tls_context(cafile=str(ca_file))
+        create_client_tls_context(ca_name=ca_file.name)
+
+
+@pytest.mark.parametrize("ca_name", ["/etc/passwd", "../outside", "nested/ca.pem"])
+def test_custom_ca_rejects_path_names_without_disclosure(ca_name) -> None:
+    with pytest.raises(TLSConfigurationError, match="filename is invalid") as raised:
+        create_client_tls_context(ca_name=ca_name)
+
+    assert ca_name not in str(raised.value)

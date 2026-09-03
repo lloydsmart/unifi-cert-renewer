@@ -7,13 +7,82 @@ import pytest
 import secure_file
 
 
+@pytest.fixture(autouse=True)
+def trusted_root(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(tmp_path))
+
+
 def test_accepts_regular_file_owned_by_effective_user(tmp_path) -> None:
     path = tmp_path / "credential"
     path.write_bytes(b"secret")
     path.chmod(0o600)
 
-    with secure_file.open_secure_file(str(path), source_name="Credential") as file:
+    with secure_file.open_secure_file(path.name, source_name="Credential") as file:
         assert file.read() == b"secret"
+
+
+def test_safe_basename_resolves_beneath_normalized_trusted_root(tmp_path) -> None:
+    assert secure_file._resolve_secure_path("credential.pem", "Credential") == (
+        str(tmp_path),
+        str(tmp_path / "credential.pem"),
+        "credential.pem",
+    )
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "/etc/passwd",
+        "../outside",
+        "prefix/../outside",
+        "nested/name",
+        "nested\\name",
+        ".",
+        "..",
+        "",
+        "unsafe\x00name",
+        "unsafe\nname",
+        "unsafe\u202ename",
+        "unsafe\u2028name",
+        "unsafe\ud800name",
+        "unsafe name",
+        "caf\N{LATIN SMALL LETTER E WITH ACUTE}",
+        "a" * (secure_file.MAX_SECURE_FILENAME_CHARS + 1),
+    ],
+)
+def test_rejects_unsafe_or_outside_filename_before_filesystem_access(
+    monkeypatch, filename
+) -> None:
+    filesystem_calls: list[str] = []
+    monkeypatch.setattr(
+        secure_file.os,
+        "lstat",
+        lambda path: filesystem_calls.append(path),
+    )
+    monkeypatch.setattr(
+        secure_file.os,
+        "open",
+        lambda path, flags: filesystem_calls.append(path),
+    )
+
+    with pytest.raises(secure_file.SecureFileError, match="filename") as raised:
+        secure_file.open_secure_file(filename, source_name="Credential")
+
+    assert filesystem_calls == []
+    if filename:
+        assert filename not in str(raised.value)
+
+
+def test_rejects_non_text_filename() -> None:
+    with pytest.raises(TypeError, match="filename must be text"):
+        secure_file.open_secure_file(123, source_name="Credential")  # type: ignore[arg-type]
+
+
+def test_rejects_non_absolute_trusted_root(monkeypatch) -> None:
+    monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", "relative/root")
+
+    with pytest.raises(RuntimeError, match="root must be absolute"):
+        secure_file.open_secure_file("credential", source_name="Credential")
 
 
 @pytest.mark.parametrize(
@@ -26,7 +95,7 @@ def test_rejects_unsafe_write_permissions(tmp_path, mode, message) -> None:
     path.chmod(mode)
 
     with pytest.raises(secure_file.SecureFileError, match=message):
-        secure_file.open_secure_file(str(path), source_name="Credential")
+        secure_file.open_secure_file(path.name, source_name="Credential")
 
 
 def test_rejects_symlink_without_disclosing_path(tmp_path) -> None:
@@ -36,20 +105,40 @@ def test_rejects_symlink_without_disclosing_path(tmp_path) -> None:
     link.symlink_to(target)
 
     with pytest.raises(secure_file.SecureFileError, match="symbolic link") as raised:
-        secure_file.open_secure_file(str(link), source_name="Credential")
+        secure_file.open_secure_file(link.name, source_name="Credential")
 
     assert str(link) not in str(raised.value)
 
 
+def test_rejects_symlinked_trusted_root_without_disclosing_path(
+    monkeypatch, tmp_path
+) -> None:
+    actual_root = tmp_path / "actual-secrets"
+    actual_root.mkdir()
+    credential = actual_root / "credential"
+    credential.write_bytes(b"secret")
+    credential.chmod(0o600)
+    linked_root = tmp_path / "linked-secrets"
+    linked_root.symlink_to(actual_root, target_is_directory=True)
+    monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(linked_root))
+
+    with pytest.raises(secure_file.SecureFileError, match="secure-file root") as raised:
+        secure_file.open_secure_file(credential.name, source_name="Credential")
+
+    assert str(linked_root) not in str(raised.value)
+
+
 def test_rejects_directory_and_fifo_without_blocking(tmp_path) -> None:
+    directory = tmp_path / "directory"
+    directory.mkdir()
     with pytest.raises(secure_file.SecureFileError, match="not a regular file"):
-        secure_file.open_secure_file(str(tmp_path), source_name="Credential")
+        secure_file.open_secure_file(directory.name, source_name="Credential")
 
     if hasattr(os, "mkfifo"):
         fifo = tmp_path / "fifo"
         os.mkfifo(fifo)
         with pytest.raises(secure_file.SecureFileError, match="not a regular file"):
-            secure_file.open_secure_file(str(fifo), source_name="Credential")
+            secure_file.open_secure_file(fifo.name, source_name="Credential")
 
 
 def test_rejects_untrusted_owner(monkeypatch) -> None:
@@ -76,7 +165,11 @@ def test_fallback_detects_file_identity_change(monkeypatch, tmp_path) -> None:
         ]
     )
     monkeypatch.delattr(secure_file.os, "O_NOFOLLOW", raising=False)
-    monkeypatch.setattr(secure_file.os, "lstat", lambda unused: next(results))
+    monkeypatch.setattr(
+        secure_file,
+        "_stat_at",
+        lambda unused_descriptor, unused_filename: next(results),
+    )
 
     with pytest.raises(secure_file.SecureFileError, match="changed while being opened"):
-        secure_file.open_secure_file(str(path), source_name="Credential")
+        secure_file.open_secure_file(path.name, source_name="Credential")

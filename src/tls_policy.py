@@ -11,15 +11,15 @@ class TLSConfigurationError(ValueError):
     """A safe-to-display TLS trust configuration error."""
 
 
-def create_client_tls_context(*, cafile: str | None = None) -> ssl.SSLContext:
+def create_client_tls_context(*, ca_name: str | None = None) -> ssl.SSLContext:
     """Create a verified client context with TLS 1.2 as its protocol floor."""
 
     try:
-        if cafile is None:
+        if ca_name is None:
             context = ssl.create_default_context()
         else:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            with open_secure_file(cafile, source_name="TLS CA file") as ca_file:
+            with open_secure_file(ca_name, source_name="TLS CA file") as ca_file:
                 ca_data = ca_file.read(MAX_TLS_CA_FILE_BYTES + 1)
             if not ca_data:
                 raise TLSConfigurationError("TLS CA file is empty")

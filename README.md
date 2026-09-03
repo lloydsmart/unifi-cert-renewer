@@ -19,8 +19,11 @@ The OPNsense integration implements the narrow Trust API flow needed to resolve
 one CA by exact description, submit an already-validated CSR, and retrieve only
 the issued public certificate. It requires HTTPS with normal chain and hostname
 verification, TLS 1.2 or newer, no redirects, and credentials supplied through
-`OPNSENSE_API_KEY_FILE` and `OPNSENSE_API_SECRET_FILE`. For RSA CSRs it derives
-OPNsense `key_type` from the CSR and supports 2048, 3072, and 4096-bit keys.
+fixed `/run/secrets/opnsense-api-key` and
+`/run/secrets/opnsense-api-secret` files. An optional custom TLS CA is identified
+by a single filename beneath `/run/secrets`; arbitrary paths are not accepted.
+For RSA CSRs it derives OPNsense `key_type` from the CSR and supports 2048,
+3072, and 4096-bit keys.
 Signing permits SHA-256, SHA-384, or SHA-512 and certificate lifetimes from 1
 through 397 days.
 
