@@ -87,6 +87,31 @@ def test_extracts_requested_subject_alternative_names(
 
     assert info.dns_sans == ("unifi.test", "controller.test")
     assert info.ip_sans == ("192.0.2.10", "2001:db8::10")
+    assert info.unsupported_san_types == ()
+
+
+def test_records_unsupported_requested_san_identity_types() -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    request = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(
+            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi.test")])
+        )
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("unifi.test"),
+                    x509.RFC822Name("operator@example.test"),
+                ]
+            ),
+            critical=False,
+        )
+        .sign(private_key, hashes.SHA256())
+    )
+
+    info = inspect_csr(request.public_bytes(serialization.Encoding.PEM))
+
+    assert info.unsupported_san_types == ("RFC822Name",)
 
 
 def test_extracts_requested_subject_key_identifier(
