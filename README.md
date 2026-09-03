@@ -15,10 +15,24 @@ The UniFi integration can construct a validated, deterministic
 `keytool -certreq` argument vector with explicit DNS/IP SANs and environment
 variable password modifiers.
 
-The project does not execute `keytool`, access a keystore, or provide Docker or
-host orchestration. No production certificate has been requested or installed.
-OPNsense signing, certificate installation, live verification, and automated
-renewal remain future work.
+The OPNsense integration implements the narrow Trust API flow needed to resolve
+one CA by exact description, submit an already-validated CSR, and retrieve only
+the issued public certificate. It requires HTTPS with normal chain and hostname
+verification, TLS 1.2 or newer, no redirects, and credentials supplied through
+`OPNSENSE_API_KEY_FILE` and `OPNSENSE_API_SECRET_FILE`. For RSA CSRs it derives
+OPNsense `key_type` from the CSR and supports 2048, 3072, and 4096-bit keys.
+Signing permits SHA-256, SHA-384, or SHA-512 and certificate lifetimes from 1
+through 397 days.
+
+Issued-certificate validation now proves exact CSR subject, DNS/IP SAN, and SPKI
+continuity; enforces bounded validity and server-leaf constraints; and performs
+offline path verification against configured public CA certificate data using
+the native `cryptography` X.509 verifier.
+
+The project does not execute `keytool`, access a keystore, install certificates,
+restart or reload UniFi, perform live endpoint verification, or provide Docker
+or host orchestration. No production certificate has been requested or
+installed. Unattended renewal remains future work.
 
 The intended implementation will be developed incrementally and validated
 against a real UniFi deployment before unattended renewal is enabled.
@@ -70,8 +84,10 @@ The private key must not be exported from UniFi during routine renewal.
 3. Cryptographic CSR validation. Public PEM parsing, proof-of-possession
    verification, requested SAN/SKI inspection, and SPKI continuity validation
    are implemented.
-4. Signing through the OPNsense Trust API.
-5. Validation of the issued certificate.
+4. Signing through the OPNsense Trust API. The narrow client and request
+   validation are implemented; production signing has not been performed.
+5. Validation of the issued certificate. Leaf policy, key continuity, and
+   configured-CA path verification are implemented.
 6. Installation against the existing UniFi keypair.
 7. Live TLS verification following installation.
 8. Threshold-based one-shot renewal.

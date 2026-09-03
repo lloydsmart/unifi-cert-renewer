@@ -57,6 +57,7 @@ class CSRInfo:
     signature_algorithm_oid: str
     signature_hash_algorithm: str | None
     signature_valid: bool
+    unsupported_san_types: tuple[str, ...] = ()
 
 
 def inspect_csr(csr_pem: bytes) -> CSRInfo:
@@ -81,7 +82,7 @@ def inspect_csr(csr_pem: bytes) -> CSRInfo:
         public_key_algorithm, public_key_size = public_key_algorithm_and_size(
             public_key
         )
-        dns_sans, ip_sans = _subject_alternative_names(request)
+        dns_sans, ip_sans, unsupported_san_types = _subject_alternative_names(request)
         subject_key_identifier = _subject_key_identifier(request)
         signature_hash = request.signature_hash_algorithm
         signature_algorithm_oid = request.signature_algorithm_oid.dotted_string
@@ -107,6 +108,7 @@ def inspect_csr(csr_pem: bytes) -> CSRInfo:
         signature_algorithm_oid=signature_algorithm_oid,
         signature_hash_algorithm=(signature_hash.name if signature_hash else None),
         signature_valid=True,
+        unsupported_san_types=unsupported_san_types,
     )
 
 
@@ -148,13 +150,13 @@ def validate_csr_spki(csr_info: CSRInfo, expected_spki_sha256: str) -> None:
 
 def _subject_alternative_names(
     request: x509.CertificateSigningRequest,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     try:
         extension = request.extensions.get_extension_for_oid(
             ExtensionOID.SUBJECT_ALTERNATIVE_NAME
         )
     except x509.ExtensionNotFound:
-        return (), ()
+        return (), (), ()
 
     alternative_names = extension.value
     dns_sans = tuple(alternative_names.get_values_for_type(x509.DNSName))
@@ -162,7 +164,12 @@ def _subject_alternative_names(
         str(address)
         for address in alternative_names.get_values_for_type(x509.IPAddress)
     )
-    return dns_sans, ip_sans
+    unsupported_san_types = tuple(
+        type(name).__name__
+        for name in alternative_names
+        if not isinstance(name, (x509.DNSName, x509.IPAddress))
+    )
+    return dns_sans, ip_sans, unsupported_san_types
 
 
 def _subject_key_identifier(
