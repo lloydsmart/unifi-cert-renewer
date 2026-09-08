@@ -225,6 +225,26 @@ OPNsense API routes used by the implementation.
 
 ## UniFi Access and Orchestration
 
+The stage-6 application currently supplies only an injected execution interface,
+tested with mocked adapters. No production host/container executor is provided.
+Import always revalidates raw CSR/certificate/CA data and the configured identity
+policy, compares fresh public pre-state, and checks the exact public chain after
+import. This initial reply format supports one directly issuing self-signed CA.
+Preparation performs OPNsense signing but defaults to no UniFi import. Neither a
+prepared result nor a verified keystore import is a completed renewal.
+
+See [the installation boundary](docs/certificate-installation.md) for the
+recorded live Java findings and the concurrency, safe-path, and recovery requirements that must
+be satisfied before implementing production mutation. A command-builder result
+or dataclass must not become a remote authorization token.
+
+The future executor must exclude all keystore writers across fresh pre-import
+inspection, import, and post-import inspection. Keytool is not assumed to provide
+single-writer protection. The observed unchanged PKCS12 hash after wrong-key
+rejection does not establish transactional or crash-safe writes. Interrupted or
+ambiguous import requires fresh public inspection before recovery decisions and,
+in a later milestone, live TLS verification before renewal can be complete.
+
 The mechanism used to request CSR generation, import the certificate, and
 restart or reload UniFi must be narrowly scoped.
 

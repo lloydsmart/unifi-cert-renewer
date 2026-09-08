@@ -7,8 +7,8 @@ from hmac import compare_digest
 from ipaddress import ip_address
 
 from cryptography import x509
-from cryptography.exceptions import UnsupportedAlgorithm
-from cryptography.hazmat.primitives import hashes
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID, ExtensionOID
 from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
@@ -66,6 +66,74 @@ class CertificateInfo:
     subject_key_identifier: str | None
     signature_algorithm_oid: str
     signature_hash_algorithm: str | None
+
+
+def validate_installation_ca(
+    trusted_ca_data: bytes, *, now: datetime | None = None
+) -> bytes:
+    """Return canonical PEM for stage 6's single self-signed issuing CA.
+
+    Intermediate chains and multiple trust anchors require a separate reply
+    design. Do not append an arbitrary trust bundle to a keytool reply.
+    """
+
+    certificates = _load_trust_certificates(trusted_ca_data)
+    if len(certificates) != 1:
+        raise IssuedCertificateValidationError(
+            "installation requires exactly one configured CA"
+        )
+    ca = certificates[0]
+    try:
+        ca.verify_directly_issued_by(ca)
+    except (ValueError, TypeError, InvalidSignature, UnsupportedAlgorithm):
+        raise IssuedCertificateValidationError(
+            "installation requires a self-signed issuing CA"
+        ) from None
+    validation_time = _validation_time(now)
+    if not ca.not_valid_before_utc <= validation_time < ca.not_valid_after_utc:
+        raise IssuedCertificateValidationError("installation CA is not currently valid")
+    _validate_signature_hash(ca)
+    return ca.public_bytes(serialization.Encoding.PEM)
+
+
+def build_validated_certificate_reply(
+    certificate_data: bytes,
+    csr_info: CSRInfo,
+    *,
+    trusted_ca_data: bytes,
+    lifetime_days: int,
+    now: datetime | None = None,
+) -> tuple[CertificateInfo, tuple[bytes, bytes], bytes]:
+    """Validate and encode a leaf-first X.509 PEM sequence for keytool stdin.
+
+    Returns leaf metadata, the exact public DER chain, and the public reply.
+    Input bounds are enforced by the existing certificate validation path.
+    """
+
+    ca_pem = validate_installation_ca(trusted_ca_data, now=now)
+    info = validate_issued_certificate(
+        certificate_data,
+        csr_info,
+        trusted_ca_data=ca_pem,
+        lifetime_days=lifetime_days,
+        now=now,
+    )
+    leaf = _load_one_certificate(
+        certificate_data,
+        maximum=MAX_ISSUED_CERTIFICATE_BYTES,
+        label="issued certificate",
+    )
+    ca = x509.load_pem_x509_certificate(ca_pem)
+    chain = (
+        leaf.public_bytes(serialization.Encoding.DER),
+        ca.public_bytes(serialization.Encoding.DER),
+    )
+    reply = leaf.public_bytes(serialization.Encoding.PEM) + ca_pem
+    if len(reply) > MAX_ISSUED_CERTIFICATE_BYTES + MAX_TRUST_BUNDLE_BYTES:
+        raise IssuedCertificateValidationError(
+            "certificate reply exceeds the size limit"
+        )
+    return info, chain, reply
 
 
 def inspect_certificate(certificate_der: bytes) -> CertificateInfo:
