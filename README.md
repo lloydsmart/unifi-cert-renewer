@@ -32,10 +32,25 @@ continuity; enforces bounded validity and server-leaf constraints; and performs
 offline path verification against configured public CA certificate data using
 the native `cryptography` X.509 verifier.
 
-The project does not execute `keytool`, access a keystore, install certificates,
-restart or reload UniFi, perform live endpoint verification, or provide Docker
-or host orchestration. No production certificate has been requested or
-installed. Unattended renewal remains future work.
+The application entrypoint `run_to_installation()` now composes inspection,
+CSR generation/validation, OPNsense signing/retrieval, and installation
+preparation. Its default signs through OPNsense but stops before UniFi mutation.
+An explicit `install=True` exercises the guarded import and post-import checks
+through an injected UniFi execution adapter. Only mocked adapters are currently
+implemented and tested; no production executor or CLI is supplied.
+
+Stage 6 constructs a validated leaf-plus-CA public reply for the existing
+`unifi` PrivateKeyEntry, checks fresh pre-import state, and verifies the exact
+public certificate chain after import. This first implementation requires one
+directly issuing self-signed CA. See
+[`docs/certificate-installation.md`](docs/certificate-installation.md) for the
+interfaces, live Java findings, and remaining production-executor requirements.
+
+The project does not itself execute `keytool`, access a keystore, restart or
+reload UniFi, perform live endpoint verification, or provide Docker/host
+orchestration. A stage-6 result is explicitly **not a completed renewal**.
+Production signing and import have not been verified by this implementation.
+Unattended renewal remains future work.
 
 The intended implementation will be developed incrementally and validated
 against a real UniFi deployment before unattended renewal is enabled.
@@ -81,9 +96,10 @@ The private key must not be exported from UniFi during routine renewal.
 ## Planned Development Stages
 
 1. Read-only inspection of captured UniFi HTTPS certificate and keystore-entry
-   data. The parsing layer is implemented; command orchestration is not.
+   data. Parsing and an injected public inspection seam are implemented.
 2. CSR command construction using the existing UniFi private key. Argument
-   construction and input validation are implemented; execution is not.
+   construction, input validation, and an injected execution seam are implemented;
+   a production executor is not.
 3. Cryptographic CSR validation. Public PEM parsing, proof-of-possession
    verification, requested SAN/SKI inspection, and SPKI continuity validation
    are implemented.
@@ -91,7 +107,11 @@ The private key must not be exported from UniFi during routine renewal.
    validation are implemented; production signing has not been performed.
 5. Validation of the issued certificate. Leaf policy, key continuity, and
    configured-CA path verification are implemented.
-6. Installation against the existing UniFi keypair.
+6. Installation against the existing UniFi keypair. Validation, reply/argv
+   construction, an injected import seam, and exact post-import public-chain
+   verification are implemented. Live OpenJDK 25 experiments confirm the
+   leaf-plus-CA stdin reply and wrong-key rejection. Production writer exclusion
+   and interruption recovery remain executor requirements.
 7. Live TLS verification following installation.
 8. Threshold-based one-shot renewal.
 9. Container packaging and external scheduling.
