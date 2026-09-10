@@ -124,72 +124,29 @@ class CertificateImportRequest:
 class CertificateImportPlan:
     """Reviewable validation result; only public bytes go to the execution seam."""
 
-    argv: tuple[str, ...]
     reply_pem: bytes
     certificate_chain_der: tuple[bytes, bytes]
     issued: CertificateInfo
 
 
 class UnifiExecutionBoundary(Protocol):
-    """Trusted, future UniFi-side adapter; no implementation is shipped.
+    """Narrow key-owner-local operations; raw public requests are not authority.
 
-    Operations target only the fixed UniFi entry. Adapters must enforce bounded
-    IO/timeouts, safe local secret loading, direct argv execution, and serialize
-    changes from the final inspection through import and post-inspection.
-    The exclusive context must never suppress exceptions. The production adapter
-    must exclude every writer (other renewers, UniFi, and host tools) throughout
-    fresh inspection, import, and post-inspection. Keytool supplies no assumed
-    single-writer guarantee; a Python lock alone is insufficient. This guarantee
-    remains a production-executor requirement, not an implemented host lock.
-    See docs/certificate-installation.md before implementing one.
+    Implementations construct their own commands and exclude UniFi and cooperating
+    writers. Host root remains a trusted administrative boundary.
     """
 
     def exclusive(self) -> AbstractContextManager[None]: ...
 
     def inspect_public_state(self) -> PublicKeystoreState: ...
 
-    def generate_csr(self, argv: tuple[str, ...]) -> bytes: ...
+    def generate_csr(self, policy: CertificatePolicy) -> bytes: ...
 
     def import_certificate_reply(
-        self, plan: CertificateImportPlan, *, expected_before: PublicKeystoreState
+        self, request: CertificateImportRequest, *, expected_before: PublicKeystoreState
     ) -> int:
         """Feed reply_pem to stdin; return exit status only, never diagnostics."""
         ...
-
-
-def build_keytool_importcert_command(
-    *,
-    alias: str = UNIFI_ALIAS,
-    keystore_path: str = UNIFI_KEYSTORE_PATH,
-    password_env_name: str = UNIFI_PASSWORD_ENV_NAME,
-) -> tuple[str, ...]:
-    """Build argv using the reported live Java 25 stdin/chain/noprompt semantics.
-
-    The wrong-key rejection observed live does not establish crash-safe writes
-    or writer exclusion. No arbitrary target or file IO is provided here.
-    """
-
-    if alias != UNIFI_ALIAS:
-        raise UnifiOperationError("certificate import requires the unifi alias")
-    if keystore_path != UNIFI_KEYSTORE_PATH:
-        raise UnifiOperationError("certificate import requires the fixed UniFi path")
-    if password_env_name != UNIFI_PASSWORD_ENV_NAME:
-        raise UnifiOperationError("certificate import requires the fixed password name")
-    return (
-        "/usr/bin/keytool",
-        "-importcert",
-        "-alias",
-        UNIFI_ALIAS,
-        "-keystore",
-        UNIFI_KEYSTORE_PATH,
-        "-storetype",
-        "PKCS12",
-        "-storepass:env",
-        UNIFI_PASSWORD_ENV_NAME,
-        "-keypass:env",
-        UNIFI_PASSWORD_ENV_NAME,
-        "-noprompt",
-    )
 
 
 def inspect_public_keystore_state(
@@ -287,9 +244,7 @@ def prepare_certificate_import(
         lifetime_days=request.lifetime_days,
         now=now,
     )
-    return CertificateImportPlan(
-        build_keytool_importcert_command(), reply, chain, issued
-    )
+    return CertificateImportPlan(reply, chain, issued)
 
 
 def verify_certificate_import(
@@ -341,8 +296,8 @@ class UnifiClient:
 
     def request_csr(self, policy: CertificatePolicy) -> bytes:
         try:
-            argv = build_unifi_csr_command(policy)
-            csr_pem = self._boundary.generate_csr(argv)
+            build_unifi_csr_command(policy)
+            csr_pem = self._boundary.generate_csr(policy)
             validate_requested_csr(csr_pem, policy)
             return csr_pem
         except Exception:
@@ -357,17 +312,18 @@ class UnifiClient:
 
         No caller-controlled time override exists on this execution path.
         Failure after dispatch has an uncertain mutation outcome; never retry
-        automatically, restart, or attempt an implicit rollback.
+        automatically or attempt an implicit rollback. The executor restores the
+        initial service state only after successful canonical verification.
         Recovery requires fresh public inspection even if keytool reported a
         wrong-key error. Cancellation propagates without a result; process death
-        and any surviving child must be handled by the future executor before
+        and any surviving child must be handled by the key-owner-local executor before
         it permits recovery inspection or another writer.
         """
 
         stage = "pre-import validation"
         try:
             with self._boundary.exclusive():
-                plan = prepare_certificate_import(request)
+                prepare_certificate_import(request)
                 current = self._boundary.inspect_public_state()
                 old_info = inspect_public_keystore_state(request.before)
                 current_info = inspect_public_keystore_state(current)
@@ -381,7 +337,7 @@ class UnifiClient:
                     )
                 stage = "certificate import; keystore may have changed"
                 status = self._boundary.import_certificate_reply(
-                    plan, expected_before=current
+                    request, expected_before=current
                 )
                 if type(status) is not int or status != 0:
                     raise UnifiOperationError("keytool certificate import failed")

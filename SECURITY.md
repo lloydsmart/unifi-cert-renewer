@@ -70,7 +70,7 @@ Routine renewal must not:
 
 * generate a new private key;
 * export the existing private key;
-* copy the keystore containing it;
+* copy the keystore containing it into the renewer or outside UniFi appdata;
 * mount that keystore into the renewer;
 * retrieve the private key through Docker or filesystem access;
 * submit private-key material to OPNsense;
@@ -78,7 +78,22 @@ Routine renewal must not:
 
 CSR generation must use the existing UniFi private key in place.
 
-Only the resulting public CSR may leave the UniFi key-owning environment.
+Only public CSRs, certificates/chains, and bounded public inspection results may
+leave the UniFi key-owning environment.
+
+Issue #12 explicitly permits temporary **whole-keystore staging and rollback
+objects inside the protected UniFi appdata/key-owning environment**. They must
+never be returned, mounted into the renewer, transmitted, logged, or parsed for
+private-key material. They use restrictive ownership and permissions, exist only
+for staging/recovery, and must be removed after completed recovery or later
+successful live verification. Standalone private-key extraction remains forbidden.
+The executor copies whole-keystore data kernel-to-kernel, without reading it into
+Python memory. Public inspection uses keytool's certificate-only output.
+
+Direct `keytool -importcert` against the canonical keystore is prohibited:
+OpenJDK 25.0.2 destructive write failure was demonstrated in issue #12. A failed
+import truncated a disposable PKCS12 after printing a success message. The
+executor must mutate an independent stage and validate it before atomic commit.
 
 Deliberate key rotation is outside the routine renewal flow and must require a
 separate explicit design and operation.
@@ -225,25 +240,42 @@ OPNsense API routes used by the implementation.
 
 ## UniFi Access and Orchestration
 
-The stage-6 application currently supplies only an injected execution interface,
-tested with mocked adapters. No production host/container executor is provided.
-Import always revalidates raw CSR/certificate/CA data and the configured identity
-policy, compares fresh public pre-state, and checks the exact public chain after
-import. This initial reply format supports one directly issuing self-signed CA.
-Preparation performs OPNsense signing but defaults to no UniFi import. Neither a
-prepared result nor a verified keystore import is a completed renewal.
+The Stage-6 application revalidates raw CSR/certificate/CA data and configured
+identity policy, compares fresh public pre-state, and verifies the exact public
+chain after import. The key-owner-local executor reuses the same validation path
+for the stage and committed canonical file. Prepared plans contain public results,
+not executable argv or authorization. One directly issuing self-signed CA is
+currently supported. Neither preparation nor keystore import completes renewal.
 
-See [the installation boundary](docs/certificate-installation.md) for the
-recorded live Java findings and the concurrency, safe-path, and recovery requirements that must
-be satisfied before implementing production mutation. A command-builder result
-or dataclass must not become a remote authorization token.
+The executor's mutation/recovery gate is unconditional pending source review;
+there is no CLI flag or environment variable enabling it. A reviewed transport,
+helper supervisor/startup recovery hook, and authorization policy remain required
+before deployment. See [executor and recovery](docs/unifi-executor.md).
 
-The future executor must exclude all keystore writers across fresh pre-import
-inspection, import, and post-import inspection. Keytool is not assumed to provide
-single-writer protection. The observed unchanged PKCS12 hash after wrong-key
-rejection does not establish transactional or crash-safe writes. Interrupted or
-ambiguous import requires fresh public inspection before recovery decisions and,
-in a later milestone, live TLS verification before renewal can be complete.
+Writer exclusion covers UniFi through s6 quiescence and actual Java process
+inspection, project-controlled renewers through an inherited exclusive lock,
+and cooperating automation using the same lock. Host root is a trusted
+administrative boundary: the executor cannot prevent a privileged administrator
+from bypassing locks, modifying mounts/appdata, or killing the helper. Fresh
+file identity and public-state checks detect observable unexpected changes;
+they do not claim exclusion of malicious host root. Container initialization
+must not run concurrently with an active helper transaction.
+
+A public-only durable journal records service-down intent before stopping UniFi
+and blocks another transaction. Explicit recovery obtains exclusion, checks for
+surviving keytool processes, quiesces UniFi, and compares fresh public state and
+file identities. It may restore the retained old inode atomically, never re-import
+or re-sign. Unexpected state requires operator intervention. A surviving or
+uninspectable writer retains the helper's lock until operator intervention/helper
+exit. Rollback remains after successful commit until Stage 7 verifies live TLS.
+
+The journal currently identifies files by device/inode, not a persistent Btrfs
+filesystem/subvolume identity. Remount or reboot can change device numbers and
+force operator recovery; unconditional reboot recovery is not implemented.
+Interrupted initial journal creation or stage ownership setup may also require
+an operator. These limitations and the missing startup supervisor remain
+production enablement blockers. Root-owned artifacts in `abc`-writable appdata
+also rely on excluding all other `abc` writers during a transaction.
 
 The mechanism used to request CSR generation, import the certificate, and
 restart or reload UniFi must be narrowly scoped.
