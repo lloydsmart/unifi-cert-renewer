@@ -13,11 +13,10 @@ from cryptography import x509
 from certificate import MAX_ISSUED_CERTIFICATE_BYTES, MAX_TRUST_BUNDLE_BYTES
 from unifi_client import (
     MAX_KEYTOOL_OUTPUT_CHARS,
-    CertificateImportPlan,
+    CertificateImportRequest,
     PublicKeystoreState,
     UnifiClient,
     UnifiOperationError,
-    build_keytool_importcert_command,
     prepare_certificate_import,
     verify_certificate_import,
 )
@@ -47,17 +46,16 @@ class FakeBoundary:
         self.events.append("inspect")
         return self.current
 
-    def generate_csr(self, argv):
+    def generate_csr(self, policy):
         self.events.append("csr")
-        assert argv[0] == "/usr/bin/keytool"
-        assert argv[1] == "-certreq"
-        assert argv[-2:] == ("-sigalg", "SHA384withRSA")
+        assert policy == self.request.policy
         return self.request.csr_pem
 
-    def import_certificate_reply(self, plan, *, expected_before):
+    def import_certificate_reply(self, request, *, expected_before):
         assert self.locked
         assert expected_before == self.current
-        assert isinstance(plan, CertificateImportPlan)
+        assert isinstance(request, CertificateImportRequest)
+        plan = prepare_certificate_import(request)
         self.events.append("import")
         if self.failure:
             raise self.failure
@@ -65,44 +63,6 @@ class FakeBoundary:
             metadata(2), plan.certificate_chain_der
         )
         return self.status
-
-
-def test_deterministic_import_command_does_not_read_password(monkeypatch):
-    monkeypatch.setenv("UNIFI_KEYSTORE_PASSWORD", "synthetic-do-not-disclose")
-    assert build_keytool_importcert_command() == (
-        "/usr/bin/keytool",
-        "-importcert",
-        "-alias",
-        "unifi",
-        "-keystore",
-        "/config/data/keystore",
-        "-storetype",
-        "PKCS12",
-        "-storepass:env",
-        "UNIFI_KEYSTORE_PASSWORD",
-        "-keypass:env",
-        "UNIFI_KEYSTORE_PASSWORD",
-        "-noprompt",
-    )
-
-
-@pytest.mark.parametrize("field", ["alias", "keystore_path", "password_env_name"])
-@pytest.mark.parametrize(
-    "value",
-    [
-        "",
-        None,
-        "-delete",
-        "../keystore",
-        "/tmp/keystore",
-        "unifi;echo unsafe",
-        "unsafe\nvalue",
-        "x" * 5000,
-    ],
-)
-def test_import_target_is_fixed(field, value):
-    with pytest.raises(UnifiOperationError):
-        build_keytool_importcert_command(**{field: value})
 
 
 def test_prepares_exact_public_reply_and_verifies_import(installation_material):

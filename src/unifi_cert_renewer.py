@@ -1,8 +1,9 @@
 """First application entrypoint: prepare stage 6 through explicit device seams.
 
-There is deliberately no production command runner or CLI configuration loader.
+There is deliberately no CLI configuration loader.
 Preparation signs through OPNsense but does not mutate UniFi. Optional installation
-requires an explicitly supplied UniFi adapter; no such adapter ships here.
+requires an explicitly supplied UniFi adapter. The key-owner-local production
+adapter remains source-gated pending review.
 """
 
 from dataclasses import dataclass

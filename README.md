@@ -36,19 +36,23 @@ The application entrypoint `run_to_installation()` now composes inspection,
 CSR generation/validation, OPNsense signing/retrieval, and installation
 preparation. Its default signs through OPNsense but stops before UniFi mutation.
 An explicit `install=True` exercises the guarded import and post-import checks
-through an injected UniFi execution adapter. Only mocked adapters are currently
-implemented and tested; no production executor or CLI is supplied.
+through an injected UniFi execution adapter. A key-owner-local production executor is implemented, but its mutation and
+recovery methods are source-gated pending review. No production CLI or transport
+is supplied.
 
 Stage 6 constructs a validated leaf-plus-CA public reply for the existing
 `unifi` PrivateKeyEntry, checks fresh pre-import state, and verifies the exact
-public certificate chain after import. This first implementation requires one
+public certificate chain after import. The executor imports only into a local
+staging keystore, then uses a durable rollback link and atomic replacement.
+This first implementation requires one
 directly issuing self-signed CA. See
 [`docs/certificate-installation.md`](docs/certificate-installation.md) for the
 interfaces, live Java findings, and remaining production-executor requirements.
 
-The project does not itself execute `keytool`, access a keystore, restart or
-reload UniFi, perform live endpoint verification, or provide Docker/host
-orchestration. A stage-6 result is explicitly **not a completed renewal**.
+The executor runs exclusively inside the UniFi key-owning environment and uses
+s6 stop/start for writer exclusion. It does not perform live endpoint verification
+or provide Docker/host orchestration. See the
+[executor and recovery design](docs/unifi-executor.md). A stage-6 result is explicitly **not a completed renewal**.
 Production signing and import have not been verified by this implementation.
 Unattended renewal remains future work.
 
@@ -98,8 +102,7 @@ The private key must not be exported from UniFi during routine renewal.
 1. Read-only inspection of captured UniFi HTTPS certificate and keystore-entry
    data. Parsing and an injected public inspection seam are implemented.
 2. CSR command construction using the existing UniFi private key. Argument
-   construction, input validation, and an injected execution seam are implemented;
-   a production executor is not.
+   construction, input validation, and key-owner-local execution are implemented.
 3. Cryptographic CSR validation. Public PEM parsing, proof-of-possession
    verification, requested SAN/SKI inspection, and SPKI continuity validation
    are implemented.
@@ -107,11 +110,11 @@ The private key must not be exported from UniFi during routine renewal.
    validation are implemented; production signing has not been performed.
 5. Validation of the issued certificate. Leaf policy, key continuity, and
    configured-CA path verification are implemented.
-6. Installation against the existing UniFi keypair. Validation, reply/argv
-   construction, an injected import seam, and exact post-import public-chain
-   verification are implemented. Live OpenJDK 25 experiments confirm the
-   leaf-plus-CA stdin reply and wrong-key rejection. Production writer exclusion
-   and interruption recovery remain executor requirements.
+6. Installation against the existing UniFi keypair. Validation, public reply
+   preparation, staged import, service quiescence, durable recovery journal, and
+   exact post-import public-chain verification are implemented. Mutation remains
+   disabled pending review. Disposable Java tests supplement the recorded live
+   OpenJDK 25 evidence; production deployment is not enabled.
 7. Live TLS verification following installation.
 8. Threshold-based one-shot renewal.
 9. Container packaging and external scheduling.
@@ -152,7 +155,8 @@ The project follows several non-negotiable design rules:
 
 * UniFi owns the HTTPS private key.
 * Routine certificate renewal does not rotate that key.
-* The renewer must never export or copy the UniFi private key or keystore.
+* The renewer must never receive the UniFi private key or keystore. Whole-keystore
+  staging/rollback objects are permitted only inside protected UniFi appdata.
 * OPNsense owns the CA private key.
 * The renewer must never retrieve CA private-key material.
 * CSR proof-of-possession and public-key continuity must be verified.
@@ -212,7 +216,7 @@ pytest
 Shell syntax:
 
 ```bash
-bash -n scripts/*.sh
+for script in scripts/*.sh; do bash -n "$script"; done
 bash -n .githooks/pre-commit
 ```
 
