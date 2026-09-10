@@ -99,6 +99,26 @@ def _run(argv: tuple[str, ...], data: bytes, env: dict[str, str], lock: int) -> 
                 stream.close()
 
 
+def _inspect_process(process: Path) -> tuple[bool, bool]:
+    """Identify a single real Java/ace.jar or keytool process from /proc data."""
+    # Linux retains the executable inode for a running process after package
+    # replacement/unlink and annotates its proc symlink target.
+    executable = Path(os.readlink(process / "exe").removesuffix(" (deleted)")).name
+    if executable not in {"java", "keytool"}:
+        return False, False
+    with (process / "cmdline").open("rb") as stream:
+        command = stream.read(65537)
+    if len(command) > 65536:
+        raise UnifiOperationError("process command exceeds inspection limit")
+    args = command.split(b"\0")
+    keytool = executable == "keytool" or b"sun.security.tools.keytool.Main" in args
+    unifi = executable == "java" and any(
+        args[index : index + 3] == [b"-jar", b"/usr/lib/unifi/lib/ace.jar", b"start"]
+        for index in range(len(args))
+    )
+    return unifi, keytool
+
+
 def _processes() -> tuple[bool, bool]:
     """Identify real Java/ace.jar and keytool executables, never shell text.
 
@@ -110,26 +130,9 @@ def _processes() -> tuple[bool, bool]:
         if not process.name.isdecimal():
             continue
         try:
-            # Linux retains the executable inode for a running process after
-            # package replacement/unlink and annotates its proc symlink target.
-            executable = Path(
-                os.readlink(process / "exe").removesuffix(" (deleted)")
-            ).name
-            if executable not in {"java", "keytool"}:
-                continue
-            with (process / "cmdline").open("rb") as stream:
-                command = stream.read(65537)
-            if len(command) > 65536:
-                raise UnifiOperationError("process command exceeds inspection limit")
-            args = command.split(b"\0")
-            keytool |= executable == "keytool" or (
-                b"sun.security.tools.keytool.Main" in args
-            )
-            unifi |= executable == "java" and any(
-                args[index : index + 3]
-                == [b"-jar", b"/usr/lib/unifi/lib/ace.jar", b"start"]
-                for index in range(len(args))
-            )
+            found_unifi, found_keytool = _inspect_process(process)
+            unifi |= found_unifi
+            keytool |= found_keytool
         except FileNotFoundError:
             continue
         except OSError:

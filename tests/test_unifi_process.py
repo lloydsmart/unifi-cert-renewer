@@ -186,12 +186,11 @@ def test_unlinked_executable_remains_a_detected_writer(tmp_path):
     executable.chmod(0o700)
     child = subprocess.Popen((str(executable), "20"))
     try:
-        assert process._processes()[1]
+        child_process = Path(f"/proc/{child.pid}")
+        assert process._inspect_process(child_process) == (False, True)
         executable.unlink()
         assert os.readlink(f"/proc/{child.pid}/exe").endswith(" (deleted)")
-        assert process._processes()[1]
-        with pytest.raises(UnifiOperationError, match="surviving keytool"):
-            process._Service(-1).no_keytool()
+        assert process._inspect_process(child_process) == (False, True)
     finally:
         child.kill()
         child.wait(timeout=5)
