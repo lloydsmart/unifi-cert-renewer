@@ -48,7 +48,6 @@ def platform(tmp_path, monkeypatch, installation_material):
     monkeypatch.setattr(executor, "_Files", make_files)
     monkeypatch.setattr(filesystem, "_ADMIN", (os.getuid(), os.getgid()))
     monkeypatch.setattr(executor, "_local_identity", lambda: (files.uid, files.gid))
-    monkeypatch.setattr(executor, "_require_mutation_review", lambda: None)
     monkeypatch.setattr(
         executor,
         "_password_environment",
@@ -146,18 +145,11 @@ def write_live_verified_journal(p):
     return journal
 
 
-def test_real_production_gate_has_no_enable_argument():
-    with pytest.raises(UnifiOperationError, match="disabled"):
-        executor._require_mutation_review()
+def test_production_executor_has_no_runtime_enable_or_target_arguments():
     with pytest.raises(TypeError):
         executor.ProductionUnifiExecutor(enabled=True)
-    adapter = executor.ProductionUnifiExecutor()
-    with pytest.raises(UnifiOperationError, match="disabled"):
-        adapter.recover()
-    with pytest.raises(UnifiOperationError, match="disabled"):
-        adapter.finalize_live_verification(b"public")
-    with pytest.raises(UnifiOperationError, match="disabled"), adapter.exclusive():
-        pytest.fail("gate reached filesystem")
+    with pytest.raises(TypeError):
+        executor.ProductionUnifiExecutor(keystore="/tmp/other")
 
 
 def test_success_uses_independent_stage_and_retains_rollback(platform):
@@ -178,6 +170,47 @@ def test_success_uses_independent_stage_and_retains_rollback(platform):
     with pytest.raises(UnifiOperationError):
         install(p)
     assert p.events.count("import") == 1
+
+
+def test_startup_recovery_leaves_java_down_until_s6_dependency_completes(platform):
+    p = platform
+    install(p)
+    p.service.up = False  # s6 has not made the dependent Java longrun eligible.
+    imports = p.events.count("import")
+    assert (
+        p.adapter.recover(startup=True) == "service_resumed_pending_live_verification"
+    )
+    assert not p.service.up
+    assert p.events.count("start") == 1  # The installation resume only.
+    assert p.events.count("import") == imports
+    assert (
+        p.adapter.recover(startup=True) == "service_resumed_pending_live_verification"
+    )
+    assert not p.service.up
+    assert p.events.count("import") == imports
+
+
+def test_startup_recovery_of_old_state_never_reimports_or_starts_java(platform):
+    p = platform
+    p.state.import_error = UnifiOperationError("synthetic import failure")
+    with pytest.raises(UnifiOperationError):
+        install(p)
+    assert not p.service.up
+    imports = p.events.count("import")
+    assert p.adapter.recover(startup=True) == "recovered_old"
+    assert not p.service.up
+    assert p.events.count("import") == imports
+    assert p.adapter.recover(startup=True) == "no_active_transaction"
+
+
+def test_corrupt_startup_journal_blocks_before_java_can_start(platform):
+    p = platform
+    install(p)
+    p.service.up = False
+    (p.root / JOURNAL).write_text("not-json")
+    with pytest.raises(UnifiOperationError):
+        p.adapter.recover(startup=True)
+    assert not p.service.up
 
 
 def test_exact_pending_leaf_finalises_only_after_durable_live_state(platform):
@@ -1091,9 +1124,10 @@ def test_real_directory_opener_and_symlink_rejection(tmp_path, monkeypatch):
     monkeypatch.setattr(filesystem.os, "open", anchored)
     target = tmp_path / "data"
     target.mkdir(mode=0o700)
-    monkeypatch.setattr(filesystem, "_filesystem", lambda fd: None)
+    monkeypatch.setattr(filesystem, "_filesystem", lambda fd: "ext4")
     monkeypatch.setattr(filesystem, "_ROOT", "/data")
     files = filesystem._Files(os.getuid(), os.getgid())
+    assert files.filesystem == "ext4"
     files.close()
     (tmp_path / "alias").symlink_to(target, target_is_directory=True)
     monkeypatch.setattr(filesystem, "_ROOT", "/alias")
@@ -1105,8 +1139,10 @@ def test_real_directory_opener_and_symlink_rejection(tmp_path, monkeypatch):
         filesystem._Files(os.getuid(), os.getgid())
 
 
-@pytest.mark.parametrize("kind", ["btrfs", "overlay", "ext4"])
-def test_filesystem_gate_requires_evidenced_btrfs(platform, monkeypatch, kind):
+@pytest.mark.parametrize("kind", ["btrfs", "xfs", "zfs", "ext4"])
+def test_filesystem_detection_accepts_normal_local_filesystems(
+    platform, monkeypatch, kind
+):
     import io
 
     files = platform.make_files()
@@ -1114,11 +1150,7 @@ def test_filesystem_gate_requires_evidenced_btrfs(platform, monkeypatch, kind):
         dev = os.fstat(files.fd).st_dev
         line = f"1 2 {os.major(dev)}:{os.minor(dev)} / /config/data rw - {kind} source rw\n"
         monkeypatch.setattr("builtins.open", lambda *args, **kwargs: io.StringIO(line))
-        if kind == "btrfs":
-            filesystem._filesystem(files.fd)
-        else:
-            with pytest.raises(UnifiOperationError):
-                filesystem._filesystem(files.fd)
+        assert filesystem._filesystem(files.fd) == kind
     finally:
         files.close()
 

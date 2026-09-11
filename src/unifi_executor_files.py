@@ -34,16 +34,26 @@ def _identity(value: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _filesystem(fd: int) -> None:
-    """Limit production to the evidenced Btrfs mount, including bind mounts."""
+def _filesystem(fd: int) -> str:
+    """Return the mounted filesystem type, including through a bind mount.
+
+    The transaction protocol uses only local-filesystem primitives with their
+    normal POSIX/Linux semantics.  Btrfs detection remains explicit because its
+    anonymous ``st_dev`` limitation is relevant to persisted recovery identity,
+    but a different local filesystem is not itself unsafe.
+    """
     device = os.fstat(fd).st_dev
     number = f"{os.major(device)}:{os.minor(device)}"
     with open("/proc/self/mountinfo", encoding="ascii") as stream:
         for line in stream:
             fields = line.split()
-            if fields[2] == number and fields[fields.index("-") + 1] == "btrfs":
-                return
-    raise UnifiOperationError("unsupported appdata filesystem")
+            if fields[2] == number:
+                separator = fields.index("-")
+                filesystem = fields[separator + 1]
+                if not filesystem or len(filesystem) > 64:
+                    break
+                return filesystem
+    raise UnifiOperationError("cannot identify appdata filesystem")
 
 
 class _Files:
@@ -63,7 +73,7 @@ class _Files:
                 info = os.fstat(new)
                 if info.st_uid not in {0, uid} or info.st_mode & 0o022:
                     raise UnifiOperationError("untrusted appdata directory")
-            _filesystem(self.fd)
+            self.filesystem = _filesystem(self.fd)
         except BaseException:
             os.close(self.fd)
             raise

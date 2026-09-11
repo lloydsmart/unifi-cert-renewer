@@ -117,13 +117,12 @@ as an interruption at that point; an in-memory phase is not durable evidence.
   restored; repeat verification/cleanup.
 
 SIGTERM's default action and SIGKILL do not execute Python `finally` cleanup.
-Within the same container, s6's down intent remains but there is no helper
-supervisor here to recover automatically. Surviving children inherit the flock;
-recovery also checks actual processes, including deleted executable names.
-Container/Docker restart and host reboot may restart UniFi before this library
-runs; a journal alone does not prevent that. Remounts can additionally invalidate
-the device identities as described in the executor documentation. These are
-deployment blockers, not guarantees supplied by the callable recovery method.
+Surviving children inherit the flock; recovery also checks actual processes,
+including deleted executable names. The production s6 oneshot now runs recovery
+before LinuxServer configuration initialization or the UniFi Java longrun and
+leaves Java down until that dependency succeeds. Remounts can still invalidate
+runtime device identities as described in the executor documentation; that state
+blocks startup for operator review.
 
 Recovery distinguishes old and issued public chains/SPKI and recorded inode
 identity without exporting private material. It cannot prove possession merely

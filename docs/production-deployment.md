@@ -1,0 +1,98 @@
+# Production executor deployment
+
+## Topology and trust boundary
+
+Build the executor overlay from the repository root:
+
+```bash
+docker build -f deployment/unifi/Dockerfile \
+  --build-arg UNIFI_IMAGE=lscr.io/linuxserver/unifi-network-application@sha256:<reviewed-digest> \
+  -t local/unifi-network-application-cert-renewer:reviewed .
+```
+
+Use that image in place of the otherwise identical LinuxServer UniFi image. The
+overlay installs the executor source, its hash-locked dependency, and native s6
+service definitions. It does not package or schedule the renewer itself.
+Record and review the upstream image digest rather than building production from
+a mutable tag. The repository's deny-by-default `.dockerignore` keeps unrelated
+workspace files, Git data, local secrets, and certificate/keystore artifacts out
+of the Docker build context.
+
+Create one host runtime directory using a dedicated unused numeric group ID:
+
+```bash
+install -d -o root -g 984 -m 0750 /run/unifi-cert-renewer
+```
+
+Bind-mount that directory at `/run/unifi-cert-renewer` in both the UniFi and
+renewer containers. Add only the renewer process to supplemental group `984`.
+Do not mount `/config`, the UniFi password secret, or `/var/run/docker.sock` into
+the renewer. Keep `/run/secrets/unifi-keystore-password` mounted only in UniFi,
+owned by root and mode `0600` as required by the existing secret-file policy.
+
+The executor creates `executor.sock` as `root:984`, mode `0660`. Directory
+search plus socket write permission is the authorization boundary: any process
+in group `984` can invoke the five fixed operations, so no unrelated process may
+join that group. A network client cannot connect because there is no IP listener.
+If the directory is absent, symlinked, not root-owned, or not exactly `0750`, or
+the socket has unsafe ownership/type/mode, the client/server fails closed.
+
+The numeric group is deployment metadata, not a secret. Choose an unused value
+and configure it consistently; `984` is only an example.
+
+## s6 startup ordering
+
+The derivative image adds `init-unifi-cert-renewer-recovery` after LinuxServer's
+`init-config` milestone but before `init-unifi-network-application-config`.
+LinuxServer's configuration init depends on successful recovery. A second fixed
+oneshot runs after that init to restore root ownership of only the executor lock
+and journal files that LinuxServer's recursive appdata ownership normalization
+changes. Both the UniFi Java longrun and executor socket longrun depend on that
+second oneshot. This prevents initialization or Java startup from racing recovery
+evidence while retaining LinuxServer's required initialization behavior.
+
+The recovery oneshot uses the normal executor lock. With no transaction it
+returns immediately. With provable old or issued state it recovers without
+signing or importing and leaves Java down for s6 to start. The post-init hook
+holds the same lock, accepts only the exact fixed regular admin files with mode
+`0600` and expected root/`abc` ownership, restores `root:root`, fsyncs them and
+the directory, and rejects symlinks or unexpected state. It then repeats the
+read-only recovery decision so LinuxServer initialization cannot invalidate the
+proved state. Corrupt, ambiguous, unsupported, or identity-mismatched state
+returns nonzero and blocks dependent services. Repeated starts are safe.
+
+The executor's fixed local prerequisites remain Linux `/proc`, root inside the
+UniFi container, `abc` as uid/gid `1000:1000`, `/usr/bin/keytool`, the LinuxServer
+service at `/run/service/svc-unifi-network-application`, and the existing fixed
+`/config/data/keystore` alias `unifi`.
+
+## Renewer configuration
+
+Construct the production UniFi client with:
+
+```python
+from unifi_client import UnifiClient
+from unifi_executor_service import SocketUnifiExecutionBoundary
+
+unifi = UnifiClient(SocketUnifiExecutionBoundary())
+```
+
+No socket path or privileged target is configurable. The caller can provide only
+the existing public certificate policy and public renewal material. Protocol
+version 1 exposes `inspect`, `generate_csr`, `install`, `recover`, and `finalize`.
+
+## Filesystem behavior
+
+Btrfs is not required. Every normal local filesystem follows the same generic
+transaction path: fixed dirfd-relative names, no-follow opens, owner/mode/type/
+link-count checks, live device/inode checks, an independent stage, rollback hard
+link, atomic same-directory replacement, file/directory fsync ordering, durable
+journal, and conservative recovery.
+
+Btrfs detection remains explicit because its subvolume `st_dev` can be an
+anonymous runtime number. Runtime device/inode identity is deliberately not
+treated as persistent on any filesystem. If remount/reboot makes recorded
+identity ambiguous, startup blocks and preserves evidence for an operator. Do
+not edit the journal or delete rollback artifacts merely to make startup pass.
+
+Threshold policy and unattended scheduling are not implemented by issue #17.

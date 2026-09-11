@@ -38,9 +38,10 @@ Its default signs through OPNsense but stops before UniFi mutation. An explicit
 `install=True` exercises the guarded import and post-import checks through an
 injected UniFi execution adapter. Supplying an explicit `LiveTLSEndpoint` also
 runs Stage 7 and returns `renewal_complete` only after live verification and
-executor finalisation. A key-owner-local production executor is implemented,
-but its mutation, recovery, and finalisation methods are source-gated pending
-review. No production CLI or transport is supplied.
+executor finalisation. The production adapter uses a fixed Unix-domain socket
+to reach a key-owner-local executor inside UniFi. The socket exposes only public
+inspection, CSR generation, guarded installation, recovery, and exact-leaf
+finalisation. See the [production deployment guide](docs/production-deployment.md).
 
 Stage 6 constructs a validated leaf-plus-CA public reply for the existing
 `unifi` PrivateKeyEntry, checks fresh pre-import state, and verifies the exact
@@ -49,16 +50,18 @@ staging keystore, then uses a durable rollback link and atomic replacement.
 This first implementation requires one
 directly issuing self-signed CA. See
 [`docs/certificate-installation.md`](docs/certificate-installation.md) for the
-interfaces, live Java findings, and remaining production-executor requirements.
+interfaces and live Java findings.
 
 The executor runs exclusively inside the UniFi key-owning environment and uses
 s6 stop/start for writer exclusion. Live endpoint verification stays on the
 application side; the executor exposes only exact-pending-certificate
-finalisation. It does not provide Docker/host orchestration. See the
-[executor and recovery design](docs/unifi-executor.md). A Stage-6 result is
-explicitly **not a completed renewal**.
-Production signing and import have not been verified by this implementation.
-Unattended renewal remains future work.
+finalisation. It does not provide Docker/host orchestration. An s6 recovery
+oneshot runs before LinuxServer's UniFi configuration init and is a hard
+dependency of the Java longrun. Unsafe or ambiguous recovery state therefore
+blocks Java startup. See the [executor and recovery design](docs/unifi-executor.md).
+A Stage-6 result is explicitly **not a completed renewal**. Production signing
+and import still require a separately supervised first run; unattended
+threshold policy and scheduling remain future work.
 
 Stage 7 opens a fresh Python TLS connection to an explicit numeric address,
 port, and server identity. The numeric address avoids an unbounded DNS lookup
@@ -129,17 +132,38 @@ The private key must not be exported from UniFi during routine renewal.
    configured-CA path verification are implemented.
 6. Installation against the existing UniFi keypair. Validation, public reply
    preparation, staged import, service quiescence, durable recovery journal, and
-   exact post-import public-chain verification are implemented. Mutation remains
-   disabled pending review. Disposable Java tests supplement the recorded live
-   OpenJDK 25 evidence; production deployment is not enabled.
+   exact post-import public-chain verification are implemented. Production
+   invocation is restricted by the local socket boundary. Disposable Java tests
+   supplement the recorded live OpenJDK 25 evidence.
 7. Live TLS verification following installation. Fresh verified connection,
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
-   finalisation are implemented. Production invocation remains gated.
+   finalisation are implemented.
 8. Threshold-based one-shot renewal.
 9. Container packaging and external scheduling.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.
+
+## Production Executor Deployment
+
+Issue #17 supplies a small derivative UniFi image overlay containing the Python
+executor and native s6 definitions. The renewer connects to the fixed
+`/run/unifi-cert-renewer/executor.sock`; both containers receive only that shared
+runtime directory. Its root-owned directory mode (`0750`) and socket mode
+(`0660`) authorize the dedicated deployment group. The renewer does not receive
+`/config`, the keystore secret, or the Docker socket.
+
+Btrfs is not required. Btrfs, XFS, ZFS, ext4, and other normal local Unraid
+filesystems use the same fixed-path, no-follow, file-identity, hard-link,
+atomic-replacement, fsync, journal, and fail-closed checks. Btrfs is still
+detected so its non-persistent anonymous device-number limitation is explicit.
+If a reboot/remount makes a recorded device/inode identity impossible to prove,
+startup blocks for operator review instead of weakening identity checks.
+
+Deployment steps and permission checks are in
+[`docs/production-deployment.md`](docs/production-deployment.md). The deliberately
+supervised first renewal procedure is in
+[`docs/first-production-renewal.md`](docs/first-production-renewal.md).
 
 ## Verified Deployment Baseline — 2026-09-02
 

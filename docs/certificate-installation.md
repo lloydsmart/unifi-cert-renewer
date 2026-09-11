@@ -21,10 +21,11 @@ Both `prepared` and `installed_pending_live_verification` have
 `renewal_complete=False`. Only successful Stage 7 verification and cleanup
 return `renewal_complete` with `renewal_complete=True`.
 
-The production executor exists inside the key-owning boundary. Its mutation,
-recovery, and finalisation methods are unconditionally disabled pending review;
-an `install` argument does not enable them. No production CLI, remote transport,
-scheduler, or deployment/startup recovery service is provided.
+The production executor exists inside the key-owning boundary. A fixed,
+permission-controlled Unix socket exposes only its five semantic operations and
+the LinuxServer s6 dependency graph runs recovery before UniFi initialization or
+Java startup. No Docker interface, generic command transport, threshold policy,
+or scheduler is provided.
 
 ## Validation and interface
 
@@ -109,3 +110,8 @@ alone never permits cleanup. The operation
 does not accept a generic success assertion or caller-selected transaction,
 command, or path. Interrupted cleanup is idempotent; failed TLS verification
 leaves recovery material intact.
+
+Production installation is exposed only through the reviewed fixed Unix-socket
+boundary and s6 startup recovery integration described in
+[the production deployment guide](production-deployment.md). A supervised first
+real renewal remains required before unattended use.
