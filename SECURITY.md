@@ -196,6 +196,14 @@ restart, but successful live verification remains mandatory.
 If the final certificate cannot be verified, the renewal transaction reports
 failure.
 
+Stage 7 implements this with a fresh socket, a `PROTOCOL_TLS_CLIENT` context,
+mandatory `CERT_REQUIRED` and hostname checking, and exact DER equality with the
+issued leaf. Connection refusal, reset, and timeout may be retried only within
+explicit attempt and deadline bounds. A completed TLS handshake serving a
+different valid leaf is an immediate identity failure, including when its SPKI
+matches the expected key. Live-verification errors expose fixed diagnostics and
+do not include peer data or configured endpoint text.
+
 ## TLS Policy
 
 All HTTPS clients must perform normal certificate validation.
@@ -268,6 +276,17 @@ file identities. It may restore the retained old inode atomically, never re-impo
 or re-sign. Unexpected state requires operator intervention. A surviving or
 uninspectable writer retains the helper's lock until operator intervention/helper
 exit. Rollback remains after successful commit until Stage 7 verifies live TLS.
+The narrow finalisation operation accepts the exact public leaf, requires it to
+match the currently pending journal identity, and has no generic success Boolean,
+caller-selected transaction, path, command, or executable. It writes
+`live_verified` durably before unlinking rollback. Recovery may continue cleanup
+only from that state after re-establishing journal-file and directory durability
+under the transaction lock. A readable journal replacement is not by itself
+proof that its namespace update crossed the directory fsync barrier. Barrier
+failure retains rollback. Cleanup also rejects phase-impossible journal fields,
+extra keystore hard links, and unexpected stage or temporary-journal artifacts.
+A missing rollback under the earlier pending phase is never evidence of
+successful verification.
 
 The journal currently identifies files by device/inode, not a persistent Btrfs
 filesystem/subvolume identity. Remount or reboot can change device numbers and

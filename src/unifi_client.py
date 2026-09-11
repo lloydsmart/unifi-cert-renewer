@@ -148,6 +148,10 @@ class UnifiExecutionBoundary(Protocol):
         """Feed reply_pem to stdin; return exit status only, never diagnostics."""
         ...
 
+    def finalize_live_verification(self, expected_leaf_der: bytes) -> str:
+        """Finalise only the pending transaction for this exact public leaf."""
+        ...
+
 
 def inspect_public_keystore_state(
     state: PublicKeystoreState,
@@ -347,6 +351,18 @@ class UnifiClient:
             return result
         except Exception:
             raise UnifiOperationError(f"UniFi {stage} failed") from None
+
+    def finalize_live_verification(self, expected_leaf_der: bytes) -> None:
+        """Request narrow cleanup after application-side exact TLS verification."""
+
+        try:
+            outcome = self._boundary.finalize_live_verification(expected_leaf_der)
+            if outcome != "renewal_finalized":
+                raise UnifiOperationError("unexpected finalisation result")
+        except Exception:
+            raise UnifiOperationError(
+                "UniFi live-verification finalisation failed"
+            ) from None
 
 
 def build_keytool_certreq_command(

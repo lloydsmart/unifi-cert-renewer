@@ -1,6 +1,7 @@
 """Review-gated executor that runs ONLY inside the UniFi key-owning environment.
 
-There is no remote transport, CLI, deployment switch, or live TLS success path.
+There is no remote transport, CLI, or deployment switch. Live TLS itself remains
+application-side; this module only durably finalises its exact pending transaction.
 Tests substitute private platform primitives against disposable files only.
 """
 
@@ -18,6 +19,7 @@ from cryptography.hazmat.primitives.serialization import Encoding
 
 from secure_file import open_secure_file
 from unifi_client import (
+    MAX_CERTIFICATE_DER_BYTES,
     MAX_KEYTOOL_OUTPUT_CHARS,
     CertificateImportRequest,
     CertificatePolicy,
@@ -51,6 +53,7 @@ _PHASES = {
     "committed",
     "canonical_verified",
     "service_resumed_pending_live_verification",
+    "live_verified",
     "recovery_required",
     "recovered_old",
 }
@@ -205,6 +208,17 @@ def _validate_journal(value):
         or not value["rollback_expected"]
     ):
         raise UnifiOperationError("inconsistent recovery journal")
+    if value["phase"] == "live_verified" and (
+        not value["resume"]
+        or not value["rollback_expected"]
+        or not value["commit_possible"]
+        or value["issued"] is None
+        or value["stage_inode"] is None
+        or value["old_inode"] == value["stage_inode"]
+        or value["old"]["spki"] != value["issued"]["spki"]
+        or len(value["issued"]["chain"]) != 2
+    ):
+        raise UnifiOperationError("inconsistent live-verified journal")
     return value
 
 
@@ -507,14 +521,125 @@ class ProductionUnifiExecutor:
         self._phase("canonical_verified")
         return 0
 
+    def finalize_live_verification(self, expected_leaf_der: bytes) -> str:
+        """Durably accept exact live evidence, then remove recovery artifacts.
+
+        The leaf fingerprint is not an authorization token: it must identify the
+        already-pending issued chain in the executor-owned journal. There is no
+        Boolean success input and no caller-selected transaction or pathname.
+        """
+
+        _require_mutation_review()
+        if (
+            not isinstance(expected_leaf_der, bytes)
+            or not 1 <= len(expected_leaf_der) <= MAX_CERTIFICATE_DER_BYTES
+        ):
+            raise UnifiOperationError("invalid live certificate evidence")
+        try:
+            canonical = x509.load_der_x509_certificate(expected_leaf_der).public_bytes(
+                Encoding.DER
+            )
+        except ValueError:
+            raise UnifiOperationError("invalid live certificate evidence") from None
+        if canonical != expected_leaf_der:
+            raise UnifiOperationError("non-canonical live certificate evidence")
+        fingerprint = hashlib.sha256(canonical).hexdigest()
+
+        with self._locked():
+            if not self._files.exists(JOURNAL):
+                raise UnifiOperationError("no pending transaction to finalise")
+            self._journal = _validate_journal(self._files.read_journal())
+            if self._journal["phase"] not in {
+                "service_resumed_pending_live_verification",
+                "live_verified",
+            }:
+                raise UnifiOperationError(
+                    "transaction is not pending live verification"
+                )
+            if (
+                not self._journal["resume"]
+                or self._journal["issued"] is None
+                or self._journal["issued"]["chain"][0] != fingerprint
+            ):
+                raise UnifiOperationError(
+                    "live certificate does not identify the pending transaction"
+                )
+            if not self._service.running():
+                raise UnifiOperationError("UniFi service is not running")
+            self._validate_live_verified_files(
+                rollback_optional=self._journal["phase"] == "live_verified"
+            )
+            if self._journal["phase"] != "live_verified":
+                # External success is durable before any recovery object is removed.
+                self._phase("live_verified")
+            self._establish_live_verified_durability()
+            self._finish_live_verified()
+            return "renewal_finalized"
+
+    def _establish_live_verified_durability(self) -> None:
+        """Re-establish file/content and namespace durability before cleanup.
+
+        A journal replacement can be readable after rename but before the
+        replacing directory entry was durably synchronized. Readability alone
+        therefore never authorizes rollback removal.
+        """
+
+        if self._journal["phase"] != "live_verified":
+            raise UnifiOperationError("transaction is not durably live verified")
+        journal_info = self._files.status(JOURNAL)
+        self._files.sync_file(JOURNAL)
+        self._files.same(JOURNAL, journal_info)
+        self._files.sync_directory()
+        self._files.same(JOURNAL, journal_info)
+
+    def _validate_live_verified_files(self, *, rollback_optional: bool) -> None:
+        canonical_info = self._files.status(CANONICAL)
+        if (
+            canonical_info.st_nlink != 1
+            or _inode(canonical_info) != self._journal["stage_inode"]
+            or _public_id(self._collect(CANONICAL)) != self._journal["issued"]
+        ):
+            raise UnifiOperationError("pending canonical certificate changed")
+        if self._files.exists(ROLLBACK):
+            rollback_info = self._files.status(ROLLBACK)
+            if (
+                rollback_info.st_nlink != 1
+                or _inode(rollback_info) != self._journal["old_inode"]
+                or _public_id(self._collect(ROLLBACK)) != self._journal["old"]
+            ):
+                raise UnifiOperationError("pending rollback changed")
+        elif not rollback_optional:
+            raise UnifiOperationError("pending rollback is missing")
+        if self._files.exists(STAGE):
+            raise UnifiOperationError("unexpected pending stage")
+        if self._files.exists(JOURNAL_NEW):
+            raise UnifiOperationError("unexpected pending journal replacement")
+
+    def _finish_live_verified(self) -> None:
+        if self._journal["phase"] != "live_verified":
+            raise UnifiOperationError("transaction is not durably live verified")
+        # Unlink is atomic. Sync before journal removal makes rollback disposal
+        # durable; a crash before that point leaves live_verified authority to retry.
+        self._files.remove(ROLLBACK)
+        self._files.sync_directory()
+        self._files.remove(JOURNAL)
+        self._files.sync_directory()
+
     def recover(self) -> str:
         """Explicit recovery; never re-imports, signs, or reports renewal complete."""
         _require_mutation_review()
         with self._locked():
             if not self._files.exists(JOURNAL):
                 self._no_transaction()
+                # Completes a possibly interrupted post-unlink directory sync.
+                self._files.sync_directory()
                 return "no_active_transaction"
             self._journal = _validate_journal(self._files.read_journal())
+            if self._journal["phase"] == "live_verified":
+                self._establish_live_verified_durability()
+                self._validate_live_verified_files(rollback_optional=True)
+                self._finish_live_verified()
+                return "renewal_finalized"
             self._expect_stopped = True
             self._service.stop()
             journal = self._journal

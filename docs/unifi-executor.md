@@ -5,9 +5,10 @@
 `ProductionUnifiExecutor` is code for execution **inside the UniFi environment**,
 not inside the renewer. It has no remote server, CLI, Docker interface, or
 production enablement option. `_require_mutation_review()` always raises for
-installation and recovery. Tests replace this private gate only for disposable
-files and simulated service control. Removing the gate requires reviewed code
-and deployment design; unattended production mutation remains unsupported.
+installation, recovery, and live-success finalisation. Tests replace this
+private gate only for disposable files and simulated service control. Removing
+the gate requires reviewed code and deployment design; unattended production
+mutation remains unsupported.
 
 The reviewed baseline currently requires local root for the narrowly scoped
 helper, `abc` uid/gid `1000:1000`, Linux `/proc`, s6, `/usr/bin/keytool`, and Btrfs
@@ -100,6 +101,8 @@ No password, API credential, diagnostics or keystore bytes are included.
 
 Each transition writes an exclusive temporary journal, fsyncs it, atomically
 replaces the journal and fsyncs the directory. Journal presence blocks new work.
+A replacement may be readable before its directory fsync has completed; recovery
+never treats readability alone as proof of transition durability.
 
 | Phase | Durable meaning / next action |
 | --- | --- |
@@ -113,6 +116,7 @@ replaces the journal and fsyncs the directory. Journal presence blocks new work.
 | `committed` | Replacement and directory fsync completed |
 | `canonical_verified` | Fresh canonical passed shared Stage-6 verification |
 | `service_resumed_pending_live_verification` | Initial service state restored; retain rollback/journal |
+| `live_verified` | Exact external TLS success recorded; re-establish its durability barrier before cleanup |
 | `recovery_required` | Failed/interrupted attempt; inspect fresh state |
 | `recovered_old` | Old state verified and initial service state restored; cleanup may be incomplete |
 
@@ -122,6 +126,50 @@ atomic stage-over-canonical replacement, directory fsync, fresh canonical
 verification, client verification, and service restoration. Canonical never
 undergoes a two-rename gap. File identities are checked again around commit.
 A success message from keytool is never an acceptance criterion.
+
+## Stage 7 live verification and finalisation
+
+The application side owns endpoint verification. `LiveTLSEndpoint` separately
+configures a numeric network address, port, and TLS server identity; none is
+hard-coded. Requiring a numeric connection address prevents DNS resolution from
+escaping the readiness deadline; the server identity may still be a DNS name.
+A fresh socket is opened after Stage 6 has restored the service. Python's normal
+verified client context performs chain and hostname authentication against the
+explicit public CA with TLS 1.2 as the minimum. Only after that succeeds is the
+peer leaf retrieved and compared byte-for-byte in canonical DER form with the
+issued leaf. Subject, SAN, issuer, serial, validity, CA membership, or SPKI alone
+cannot satisfy this check.
+
+Readiness is bounded by an absolute monotonic deadline, a maximum attempt count,
+per-attempt timeout, and bounded delay. Pre-authentication refusal, reset, and
+timeout may retry. TLS authentication or protocol failure and an authenticated
+wrong leaf fail without being treated as ordinary readiness.
+
+The key-owner-side `finalize_live_verification()` operation accepts only the
+canonical public DER leaf. It requires a journal in
+`service_resumed_pending_live_verification`, the expected service-running state,
+the exact pending issued-leaf SHA-256, the committed inode/public chain, and the
+old rollback inode/public state. A Boolean assertion, arbitrary transaction ID,
+path, command, or executable cannot be supplied.
+
+The executor writes and fsyncs `live_verified` before removing anything. Before
+every initial, repeated, or recovery cleanup path, it fsyncs the journal file,
+checks its fixed identity, fsyncs the containing directory, and checks identity
+again under the transaction lock. This re-establishes the namespace durability
+barrier if an earlier process exposed the replacement but failed before its
+directory fsync. Barrier failure retains rollback and fails closed.
+
+Only after that barrier does the executor unlink rollback, fsync the containing
+directory, remove the journal, and fsync again. If external verification succeeds
+but no `live_verified` journal replacement is visible, the earlier pending state
+and rollback remain authoritative and a later caller must verify live TLS again.
+A readable `live_verified` record authorizes recovery only after the fresh
+barrier succeeds. Missing rollback is accepted only in that phase, covering an
+interrupted unlink. Cleanup also requires single-link canonical and rollback
+keystores and rejects any surviving stage or temporary journal, because none of
+those namespace states is reachable after a valid transition. A crash after
+journal removal is recovered as no active transaction; recovery issues a final
+directory sync, and no mutation is repeated.
 
 ## Explicit recovery
 
@@ -150,6 +198,7 @@ from the kernel's [Btrfs stat implementation][btrfs-stat] and
 | --- | --- |
 | Canonical proves old state/inode | Restore service; durably clean artifacts |
 | Canonical proves issued state/inode; rollback proves old | Resume; retain rollback/journal for Stage 7 |
+| `live_verified`; issued canonical; rollback old/absent | Finish cleanup; report finalised recovery |
 | Canonical unreadable, expected inode; rollback proves old | If commit possible: restore, sync, verify, resume, clean |
 | Missing/unsafe/unexpected canonical or rollback | Fail closed; operator intervention |
 | Child/writer still alive or cannot be inspected | Retain exclusion; operator intervention |
@@ -200,7 +249,11 @@ existing PrivateKeyEntry structure, CSR proof-of-possession, staged import and
 exact public-key continuity provide the available evidence.
 
 Deployment authentication, startup recovery integration, and review of the
-helper's privileges remain prerequisites to removing the gate. Stage 7 must
-verify a fresh strictly validated TLS connection and exact issued leaf before
-removing a committed rollback/journal. No live-success cleanup API is offered
-until that verification is implemented.
+helper's privileges remain prerequisites to removing the gate. Stage 7 is
+implemented in source and tests, including real disposable loopback TLS servers,
+but it does not remove the production gate. Generated TLS server keys in tests
+are loaded through Linux memory-backed file descriptors and never receive a
+filesystem pathname. Deployment transport/authentication,
+guaranteed supervisor/startup recovery wiring, and persistent Btrfs
+filesystem/subvolume identity remain unresolved. Threshold renewal, container
+packaging, scheduling, and key rotation also remain later work.
