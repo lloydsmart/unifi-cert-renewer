@@ -101,6 +101,8 @@ No password, API credential, diagnostics or keystore bytes are included.
 
 Each transition writes an exclusive temporary journal, fsyncs it, atomically
 replaces the journal and fsyncs the directory. Journal presence blocks new work.
+A replacement may be readable before its directory fsync has completed; recovery
+never treats readability alone as proof of transition durability.
 
 | Phase | Durable meaning / next action |
 | --- | --- |
@@ -114,7 +116,7 @@ replaces the journal and fsyncs the directory. Journal presence blocks new work.
 | `committed` | Replacement and directory fsync completed |
 | `canonical_verified` | Fresh canonical passed shared Stage-6 verification |
 | `service_resumed_pending_live_verification` | Initial service state restored; retain rollback/journal |
-| `live_verified` | Exact fresh external TLS success is durable; cleanup may proceed idempotently |
+| `live_verified` | Exact external TLS success recorded; re-establish its durability barrier before cleanup |
 | `recovery_required` | Failed/interrupted attempt; inspect fresh state |
 | `recovered_old` | Old state verified and initial service state restored; cleanup may be incomplete |
 
@@ -150,13 +152,22 @@ the exact pending issued-leaf SHA-256, the committed inode/public chain, and the
 old rollback inode/public state. A Boolean assertion, arbitrary transaction ID,
 path, command, or executable cannot be supplied.
 
-The executor then writes and fsyncs `live_verified` before removing anything.
-It unlinks rollback, fsyncs the containing directory, removes the journal, and
-fsyncs again. If external verification succeeds but the `live_verified` write
-fails, the earlier pending state and rollback remain authoritative and a later
-caller must verify live TLS again. Once `live_verified` is readable, recovery
-may finish cleanup without repeating TLS, signing, or import. Missing rollback
-is accepted only in that state, covering an interrupted unlink. A crash after
+The executor writes and fsyncs `live_verified` before removing anything. Before
+every initial, repeated, or recovery cleanup path, it fsyncs the journal file,
+checks its fixed identity, fsyncs the containing directory, and checks identity
+again under the transaction lock. This re-establishes the namespace durability
+barrier if an earlier process exposed the replacement but failed before its
+directory fsync. Barrier failure retains rollback and fails closed.
+
+Only after that barrier does the executor unlink rollback, fsync the containing
+directory, remove the journal, and fsync again. If external verification succeeds
+but no `live_verified` journal replacement is visible, the earlier pending state
+and rollback remain authoritative and a later caller must verify live TLS again.
+A readable `live_verified` record authorizes recovery only after the fresh
+barrier succeeds. Missing rollback is accepted only in that phase, covering an
+interrupted unlink. Cleanup also requires single-link canonical and rollback
+keystores and rejects any surviving stage or temporary journal, because none of
+those namespace states is reachable after a valid transition. A crash after
 journal removal is recovered as no active transaction; recovery issues a final
 directory sync, and no mutation is repeated.
 
@@ -240,7 +251,9 @@ exact public-key continuity provide the available evidence.
 Deployment authentication, startup recovery integration, and review of the
 helper's privileges remain prerequisites to removing the gate. Stage 7 is
 implemented in source and tests, including real disposable loopback TLS servers,
-but it does not remove the production gate. Deployment transport/authentication,
+but it does not remove the production gate. Generated TLS server keys in tests
+are loaded through Linux memory-backed file descriptors and never receive a
+filesystem pathname. Deployment transport/authentication,
 guaranteed supervisor/startup recovery wiring, and persistent Btrfs
 filesystem/subvolume identity remain unresolved. Threshold renewal, container
 packaging, scheduling, and key rotation also remain later work.

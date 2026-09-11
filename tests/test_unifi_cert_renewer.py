@@ -3,9 +3,10 @@ from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
-from conftest import public_pem
+from conftest import public_der, public_pem
 from cryptography import x509
 from test_certificate_installation import FakeBoundary
+from test_unifi_tls import _serve_once, _server_context
 
 import unifi_cert_renewer as renewer
 from opnsense_client import CA_LIST_PATH, CERT_ADD_PATH, OPNsenseClient
@@ -14,6 +15,7 @@ from unifi_client import UnifiClient
 from unifi_tls import (
     EndpointNotReadyError,
     LiveTLSEndpoint,
+    LiveTLSVerificationError,
     ReadinessPolicy,
     ServedCertificateMismatchError,
     TLSAuthenticationError,
@@ -93,8 +95,10 @@ def test_live_exact_verification_precedes_finalisation_and_completion(
 
     def verify(**kwargs):
         boundary.events.append("live-tls")
-        assert kwargs["endpoint"] == LiveTLSEndpoint("127.0.0.1", "unifi.test", 8443)
-        assert kwargs["trusted_ca_data"] == arguments["trusted_ca_data"]
+        assert kwargs["prepared"].endpoint == LiveTLSEndpoint(
+            "127.0.0.1", "unifi.test", 8443
+        )
+        assert kwargs["prepared"].context.cert_store_stats()["x509_ca"] == 1
         assert (
             kwargs["expected_leaf_der"]
             == renewer.prepare_certificate_import(
@@ -102,7 +106,7 @@ def test_live_exact_verification_precedes_finalisation_and_completion(
             ).certificate_chain_der[0]
         )
 
-    monkeypatch.setattr(renewer, "verify_live_tls_certificate", verify)
+    monkeypatch.setattr(renewer, "verify_prepared_live_tls_certificate", verify)
     result = run_to_installation(
         **arguments,
         install=True,
@@ -125,7 +129,7 @@ def test_stage7_failure_never_reports_complete_or_removes_early(
         if failure_point == "live-tls":
             raise RuntimeError("synthetic-sensitive-diagnostic")
 
-    monkeypatch.setattr(renewer, "verify_live_tls_certificate", verify)
+    monkeypatch.setattr(renewer, "verify_prepared_live_tls_certificate", verify)
     if failure_point == "finalize":
         boundary.finalization_failure = RuntimeError("synthetic-sensitive-diagnostic")
     with pytest.raises(RenewalStageError) as raised:
@@ -152,6 +156,61 @@ def test_invalid_live_configuration_fails_before_device_or_signing(workflow):
     opnsense.sign_csr.assert_not_called()
 
 
+def test_malformed_live_ca_fails_before_device_or_signing(workflow):
+    boundary, opnsense, arguments = workflow
+    arguments["trusted_ca_data"] = b"malformed public CA"
+    with pytest.raises(RenewalStageError, match="configuration"):
+        run_to_installation(
+            **arguments,
+            install=True,
+            live_endpoint=LiveTLSEndpoint("127.0.0.1", "unifi.test"),
+        )
+    assert boundary.events == []
+    opnsense.sign_csr.assert_not_called()
+
+
+def test_live_trust_context_failure_precedes_device_or_signing(workflow, monkeypatch):
+    boundary, opnsense, arguments = workflow
+
+    def fail(**kwargs):
+        raise LiveTLSVerificationError("synthetic trust context failure")
+
+    monkeypatch.setattr(renewer, "prepare_live_tls_verification", fail)
+    with pytest.raises(RenewalStageError, match="configuration"):
+        run_to_installation(
+            **arguments,
+            install=True,
+            live_endpoint=LiveTLSEndpoint("127.0.0.1", "unifi.test"),
+        )
+    assert boundary.events == []
+    opnsense.sign_csr.assert_not_called()
+
+
+@pytest.mark.parametrize("encoding", ["PEM", "DER"])
+def test_complete_stage7_accepts_equivalent_ca_encodings(
+    workflow, installation_material, encoding
+):
+    boundary, _, arguments = workflow
+    material = installation_material
+    leaf = x509.load_pem_x509_certificate(material.request.issued_certificate)
+    context = _server_context(leaf, material.key)
+    port, thread = _serve_once(context)
+    arguments["trusted_ca_data"] = (
+        public_pem(material.ca) if encoding == "PEM" else public_der(material.ca)
+    )
+
+    result = run_to_installation(
+        **arguments,
+        install=True,
+        live_endpoint=LiveTLSEndpoint("127.0.0.1", "unifi.test", port),
+        readiness=ReadinessPolicy(2, 1, 0, 1),
+    )
+
+    thread.join(2)
+    assert result.renewal_complete is True
+    assert boundary.events[-1] == "finalize"
+
+
 @pytest.mark.parametrize(
     ("failure", "stage"),
     [
@@ -169,7 +228,7 @@ def test_stage7_safe_failure_categories_are_distinct(
     def fail(**kwargs):
         raise failure
 
-    monkeypatch.setattr(renewer, "verify_live_tls_certificate", fail)
+    monkeypatch.setattr(renewer, "verify_prepared_live_tls_certificate", fail)
     with pytest.raises(RenewalStageError, match=stage):
         run_to_installation(
             **arguments,

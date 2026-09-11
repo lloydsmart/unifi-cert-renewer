@@ -12,6 +12,7 @@ from ipaddress import ip_address
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 
+from certificate import CertificateInspectionError, validate_installation_ca
 from tls_policy import TLSConfigurationError, create_client_tls_context
 
 MAX_HOST_CHARS = 253
@@ -62,6 +63,13 @@ class ReadinessPolicy:
 DEFAULT_READINESS_POLICY = ReadinessPolicy()
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedLiveTLSVerification:
+    endpoint: LiveTLSEndpoint
+    readiness: ReadinessPolicy
+    context: ssl.SSLContext
+
+
 def validate_live_tls_configuration(
     endpoint: LiveTLSEndpoint, readiness: ReadinessPolicy
 ) -> None:
@@ -106,14 +114,48 @@ def verify_live_tls_certificate(
     authentication succeeds, an exact-leaf mismatch is an immediate hard failure.
     """
 
+    prepared = prepare_live_tls_verification(
+        endpoint=endpoint,
+        readiness=readiness,
+        trusted_ca_data=trusted_ca_data,
+    )
+    return verify_prepared_live_tls_certificate(
+        prepared=prepared, expected_leaf_der=expected_leaf_der
+    )
+
+
+def prepare_live_tls_verification(
+    *,
+    endpoint: LiveTLSEndpoint,
+    readiness: ReadinessPolicy,
+    trusted_ca_data: bytes,
+) -> _PreparedLiveTLSVerification:
+    """Validate all deterministic Stage-7 TLS configuration without connecting."""
+
     validate_live_tls_configuration(endpoint, readiness)
-    expected = _canonical_leaf(expected_leaf_der)
+    if not isinstance(trusted_ca_data, bytes) or not trusted_ca_data:
+        raise LiveTLSVerificationError("explicit UniFi TLS CA data is required")
     try:
-        context = create_client_tls_context(ca_data=trusted_ca_data)
-    except TLSConfigurationError:
+        ca_pem = validate_installation_ca(trusted_ca_data)
+        context = create_client_tls_context(ca_data=ca_pem)
+    except (CertificateInspectionError, TLSConfigurationError):
         raise LiveTLSVerificationError(
             "invalid UniFi TLS trust configuration"
         ) from None
+    return _PreparedLiveTLSVerification(endpoint, readiness, context)
+
+
+def verify_prepared_live_tls_certificate(
+    *, prepared: _PreparedLiveTLSVerification, expected_leaf_der: bytes
+) -> str:
+    """Connect using deterministic TLS configuration validated before mutation."""
+
+    if not isinstance(prepared, _PreparedLiveTLSVerification):
+        raise LiveTLSVerificationError("invalid prepared UniFi TLS verification")
+    expected = _canonical_leaf(expected_leaf_der)
+    endpoint = prepared.endpoint
+    readiness = prepared.readiness
+    context = prepared.context
 
     deadline = time.monotonic() + float(readiness.timeout_seconds)
     for attempt in range(readiness.max_attempts):

@@ -64,6 +64,8 @@ Stage 7 opens a fresh Python TLS connection to an explicit numeric address,
 port, and server identity. The numeric address avoids an unbounded DNS lookup
 outside the readiness deadline. It uses normal CA-chain and hostname verification,
 TLS 1.2 or newer, and exact DER leaf equality with the issued certificate.
+PEM or DER issuing-CA input is normalized to canonical PEM and the TLS trust
+configuration is constructed before signing or keystore mutation.
 Connection startup retries have both deadline and attempt bounds. An
 authenticated endpoint serving a different leaf fails immediately. Successful
 external verification is recorded as durable `live_verified` journal state

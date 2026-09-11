@@ -139,6 +139,13 @@ def install(p):
     return UnifiClient(p.adapter).install_certificate(p.request)
 
 
+def write_live_verified_journal(p):
+    journal = json.loads((p.root / JOURNAL).read_bytes())
+    journal["phase"] = "live_verified"
+    (p.root / JOURNAL).write_text(json.dumps(journal))
+    return journal
+
+
 def test_real_production_gate_has_no_enable_argument():
     with pytest.raises(UnifiOperationError, match="disabled"):
         executor._require_mutation_review()
@@ -284,6 +291,173 @@ def test_boolean_or_initially_down_transaction_cannot_be_finalised(platform):
     install(p)
     with pytest.raises(UnifiOperationError):
         p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert (p.root / ROLLBACK).exists()
+    assert (p.root / JOURNAL).exists()
+
+
+@pytest.mark.parametrize("operation", ["recover", "finalize"])
+def test_readable_live_verified_requires_fresh_durability_barrier_before_cleanup(
+    platform, monkeypatch, operation
+):
+    p = platform
+    install(p)
+    original_sync = filesystem._Files.sync_directory
+    original_remove = filesystem._Files.remove
+    replacement_became_readable = False
+
+    def fail_initial_barrier(self):
+        nonlocal replacement_became_readable
+        if (
+            not replacement_became_readable
+            and (p.root / JOURNAL).exists()
+            and json.loads((p.root / JOURNAL).read_bytes())["phase"] == "live_verified"
+            and (p.root / ROLLBACK).exists()
+        ):
+            replacement_became_readable = True
+            raise OSError("replacement visible before directory barrier")
+        return original_sync(self)
+
+    monkeypatch.setattr(filesystem._Files, "sync_directory", fail_initial_barrier)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert replacement_became_readable
+    assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == "live_verified"
+    assert (p.root / ROLLBACK).exists()
+
+    p.adapter = executor.ProductionUnifiExecutor()
+    recovery_barrier_attempted = False
+    rollback_unlinked = False
+
+    def fail_recovery_barrier(self):
+        nonlocal recovery_barrier_attempted
+        recovery_barrier_attempted = True
+        raise OSError("durability barrier failed")
+
+    def observe_remove(self, name):
+        nonlocal rollback_unlinked
+        rollback_unlinked |= name == ROLLBACK
+        return original_remove(self, name)
+
+    monkeypatch.setattr(filesystem._Files, "sync_directory", fail_recovery_barrier)
+    monkeypatch.setattr(filesystem._Files, "remove", observe_remove)
+    with pytest.raises(UnifiOperationError):
+        if operation == "recover":
+            p.adapter.recover()
+        else:
+            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert recovery_barrier_attempted
+    assert rollback_unlinked is False
+    assert (p.root / ROLLBACK).exists()
+    assert (p.root / JOURNAL).exists()
+
+    monkeypatch.setattr(filesystem._Files, "sync_directory", original_sync)
+    monkeypatch.setattr(filesystem._Files, "remove", original_remove)
+    assert p.adapter.recover() == "renewal_finalized"
+
+
+def test_direct_finalisation_retry_completes_partial_cleanup(platform, monkeypatch):
+    p = platform
+    install(p)
+    original = filesystem._Files.remove
+    failed = False
+
+    def interrupt_after_unlink(self, name):
+        nonlocal failed
+        result = original(self, name)
+        if name == ROLLBACK and not failed:
+            failed = True
+            raise OSError("interrupted after rollback unlink")
+        return result
+
+    monkeypatch.setattr(filesystem._Files, "remove", interrupt_after_unlink)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert failed
+    assert not (p.root / ROLLBACK).exists()
+    assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == "live_verified"
+
+    assert (
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        == "renewal_finalized"
+    )
+    assert not (p.root / JOURNAL).exists()
+
+
+@pytest.mark.parametrize("operation", ["recover", "finalize"])
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "resume",
+        "rollback_expected",
+        "commit_possible",
+        "issued",
+        "stage_inode",
+        "same_inode",
+        "spki_continuity",
+        "issued_chain_length",
+    ],
+)
+def test_impossible_live_verified_journal_fails_closed(platform, operation, corruption):
+    p = platform
+    install(p)
+    journal = write_live_verified_journal(p)
+    if corruption in {"resume", "rollback_expected", "commit_possible"}:
+        journal[corruption] = False
+    elif corruption in {"issued", "stage_inode"}:
+        journal[corruption] = None
+    elif corruption == "same_inode":
+        journal["stage_inode"] = journal["old_inode"]
+    elif corruption == "spki_continuity":
+        journal["issued"]["spki"] = "0" * 64
+    else:
+        journal["issued"]["chain"] = journal["issued"]["chain"][:1]
+    (p.root / JOURNAL).write_text(json.dumps(journal))
+
+    with pytest.raises(UnifiOperationError):
+        if operation == "recover":
+            p.adapter.recover()
+        else:
+            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert (p.root / ROLLBACK).exists()
+    assert (p.root / JOURNAL).exists()
+    assert (p.root / CANONICAL).read_bytes() == b"issued"
+    assert p.events.count("import") == 1
+
+
+@pytest.mark.parametrize("target", [CANONICAL, ROLLBACK, STAGE, JOURNAL_NEW])
+def test_live_verified_recovery_rejects_changed_files_and_unexpected_artifacts(
+    platform, target
+):
+    p = platform
+    install(p)
+    write_live_verified_journal(p)
+    path = p.root / target
+    path.write_bytes(b"unexpected")
+    path.chmod(0o600)
+
+    with pytest.raises(UnifiOperationError):
+        p.adapter.recover()
+    assert (p.root / ROLLBACK).exists()
+    assert (p.root / JOURNAL).exists()
+
+
+@pytest.mark.parametrize("operation", ["recover", "finalize"])
+@pytest.mark.parametrize("target", [CANONICAL, ROLLBACK])
+def test_live_verified_rejects_unexpected_keystore_hardlinks(
+    platform, operation, target
+):
+    p = platform
+    install(p)
+    write_live_verified_journal(p)
+    extra = p.root / f"uncontrolled-{target}"
+    os.link(p.root / target, extra)
+
+    with pytest.raises(UnifiOperationError):
+        if operation == "recover":
+            p.adapter.recover()
+        else:
+            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert extra.exists()
     assert (p.root / ROLLBACK).exists()
     assert (p.root / JOURNAL).exists()
 

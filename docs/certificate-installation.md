@@ -103,7 +103,9 @@ DNS/IP identity through the standard TLS stack, and compares the served leaf
 exactly with the issued certificate in DER form. It then calls a narrow executor
 operation with that public leaf. The executor requires it to identify the
 currently pending issued chain, durably records `live_verified`, and only then
-removes rollback and journal state with directory synchronization. The operation
+re-establishes the journal-file and directory durability barrier before removing
+rollback and journal state with directory synchronization. Journal readability
+alone never permits cleanup. The operation
 does not accept a generic success assertion or caller-selected transaction,
 command, or path. Interrupted cleanup is idempotent; failed TLS verification
 leaves recovery material intact.

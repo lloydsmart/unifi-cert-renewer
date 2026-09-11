@@ -280,8 +280,13 @@ The narrow finalisation operation accepts the exact public leaf, requires it to
 match the currently pending journal identity, and has no generic success Boolean,
 caller-selected transaction, path, command, or executable. It writes
 `live_verified` durably before unlinking rollback. Recovery may continue cleanup
-only from that durable state; a missing rollback under the earlier pending phase
-is never evidence of successful verification.
+only from that state after re-establishing journal-file and directory durability
+under the transaction lock. A readable journal replacement is not by itself
+proof that its namespace update crossed the directory fsync barrier. Barrier
+failure retains rollback. Cleanup also rejects phase-impossible journal fields,
+extra keystore hard links, and unexpected stage or temporary-journal artifacts.
+A missing rollback under the earlier pending phase is never evidence of
+successful verification.
 
 The journal currently identifies files by device/inode, not a persistent Btrfs
 filesystem/subvolume identity. Remount or reboot can change device numbers and

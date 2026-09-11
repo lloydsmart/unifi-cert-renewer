@@ -208,6 +208,17 @@ def _validate_journal(value):
         or not value["rollback_expected"]
     ):
         raise UnifiOperationError("inconsistent recovery journal")
+    if value["phase"] == "live_verified" and (
+        not value["resume"]
+        or not value["rollback_expected"]
+        or not value["commit_possible"]
+        or value["issued"] is None
+        or value["stage_inode"] is None
+        or value["old_inode"] == value["stage_inode"]
+        or value["old"]["spki"] != value["issued"]["spki"]
+        or len(value["issued"]["chain"]) != 2
+    ):
+        raise UnifiOperationError("inconsistent live-verified journal")
     return value
 
 
@@ -561,20 +572,39 @@ class ProductionUnifiExecutor:
             if self._journal["phase"] != "live_verified":
                 # External success is durable before any recovery object is removed.
                 self._phase("live_verified")
+            self._establish_live_verified_durability()
             self._finish_live_verified()
             return "renewal_finalized"
+
+    def _establish_live_verified_durability(self) -> None:
+        """Re-establish file/content and namespace durability before cleanup.
+
+        A journal replacement can be readable after rename but before the
+        replacing directory entry was durably synchronized. Readability alone
+        therefore never authorizes rollback removal.
+        """
+
+        if self._journal["phase"] != "live_verified":
+            raise UnifiOperationError("transaction is not durably live verified")
+        journal_info = self._files.status(JOURNAL)
+        self._files.sync_file(JOURNAL)
+        self._files.same(JOURNAL, journal_info)
+        self._files.sync_directory()
+        self._files.same(JOURNAL, journal_info)
 
     def _validate_live_verified_files(self, *, rollback_optional: bool) -> None:
         canonical_info = self._files.status(CANONICAL)
         if (
-            _inode(canonical_info) != self._journal["stage_inode"]
+            canonical_info.st_nlink != 1
+            or _inode(canonical_info) != self._journal["stage_inode"]
             or _public_id(self._collect(CANONICAL)) != self._journal["issued"]
         ):
             raise UnifiOperationError("pending canonical certificate changed")
         if self._files.exists(ROLLBACK):
             rollback_info = self._files.status(ROLLBACK)
             if (
-                _inode(rollback_info) != self._journal["old_inode"]
+                rollback_info.st_nlink != 1
+                or _inode(rollback_info) != self._journal["old_inode"]
                 or _public_id(self._collect(ROLLBACK)) != self._journal["old"]
             ):
                 raise UnifiOperationError("pending rollback changed")
@@ -582,6 +612,8 @@ class ProductionUnifiExecutor:
             raise UnifiOperationError("pending rollback is missing")
         if self._files.exists(STAGE):
             raise UnifiOperationError("unexpected pending stage")
+        if self._files.exists(JOURNAL_NEW):
+            raise UnifiOperationError("unexpected pending journal replacement")
 
     def _finish_live_verified(self) -> None:
         if self._journal["phase"] != "live_verified":
@@ -589,7 +621,6 @@ class ProductionUnifiExecutor:
         # Unlink is atomic. Sync before journal removal makes rollback disposal
         # durable; a crash before that point leaves live_verified authority to retry.
         self._files.remove(ROLLBACK)
-        self._files.remove(JOURNAL_NEW)
         self._files.sync_directory()
         self._files.remove(JOURNAL)
         self._files.sync_directory()
@@ -605,6 +636,7 @@ class ProductionUnifiExecutor:
                 return "no_active_transaction"
             self._journal = _validate_journal(self._files.read_journal())
             if self._journal["phase"] == "live_verified":
+                self._establish_live_verified_durability()
                 self._validate_live_verified_files(rollback_optional=True)
                 self._finish_live_verified()
                 return "renewal_finalized"

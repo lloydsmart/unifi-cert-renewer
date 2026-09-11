@@ -29,8 +29,8 @@ from unifi_tls import (
     ServedCertificateMismatchError,
     TLSAuthenticationError,
     TLSHandshakeError,
-    validate_live_tls_configuration,
-    verify_live_tls_certificate,
+    prepare_live_tls_verification,
+    verify_prepared_live_tls_certificate,
 )
 
 
@@ -77,12 +77,11 @@ def run_to_installation(
 
     stage = "configuration validation"
     try:
+        live_verification = None
         if type(install) is not bool:
             raise ValueError("install must be a boolean")
-        if live_endpoint is not None:
-            if not install:
-                raise ValueError("live TLS verification requires installation")
-            validate_live_tls_configuration(live_endpoint, readiness)
+        if live_endpoint is not None and not install:
+            raise ValueError("live TLS verification requires installation")
         if (
             type(lifetime_days) is not int
             or not 1 <= lifetime_days <= 397
@@ -90,6 +89,12 @@ def run_to_installation(
         ):
             raise ValueError("invalid signing policy")
         ca_pem = validate_installation_ca(trusted_ca_data)
+        if live_endpoint is not None:
+            live_verification = prepare_live_tls_verification(
+                endpoint=live_endpoint,
+                readiness=readiness,
+                trusted_ca_data=ca_pem,
+            )
         stage = "current UniFi inspection"
         before = unifi.inspect_current(policy)
         stage = "CSR generation and validation"
@@ -124,10 +129,8 @@ def run_to_installation(
             )
         stage = "live UniFi TLS verification"
         try:
-            verify_live_tls_certificate(
-                endpoint=live_endpoint,
-                readiness=readiness,
-                trusted_ca_data=trusted_ca_data,
+            verify_prepared_live_tls_certificate(
+                prepared=live_verification,
                 expected_leaf_der=plan.certificate_chain_der[0],
             )
         except EndpointNotReadyError:

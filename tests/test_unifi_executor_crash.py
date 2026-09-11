@@ -3,6 +3,7 @@
 import json
 import os
 import signal
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,24 @@ import unifi_executor as executor
 import unifi_executor_files as filesystem
 from unifi_client import UnifiOperationError
 from unifi_executor_files import CANONICAL, JOURNAL, JOURNAL_NEW, ROLLBACK, STAGE
+
+
+def _wait_for_checkpoint_death(child, timeout_message):
+    deadline = time.monotonic() + 10
+    while True:
+        waited, status = os.waitpid(child, os.WNOHANG)
+        if waited:
+            return waited, status
+        if time.monotonic() >= deadline:
+            os.kill(child, signal.SIGKILL)
+            reap_deadline = time.monotonic() + 1
+            while time.monotonic() < reap_deadline:
+                waited, _ = os.waitpid(child, os.WNOHANG)
+                if waited:
+                    pytest.fail(timeout_message)
+                time.sleep(0.01)
+            pytest.fail(f"{timeout_message}; helper also resisted bounded SIGKILL reap")
+        time.sleep(0.01)
 
 
 @pytest.mark.parametrize(
@@ -144,18 +163,9 @@ def test_sigkill_leaves_recoverable_or_explicit_operator_state(platform, point):
         os._exit(72)
     # A deadline bounds a regression that hangs instead of reaching the kill point.
     # The fixture's fake commands do not spawn children or touch actual services.
-    import time
-
-    deadline = time.monotonic() + 10
-    while True:
-        waited, status = os.waitpid(child, os.WNOHANG)
-        if waited:
-            break
-        if time.monotonic() >= deadline:
-            os.kill(child, signal.SIGKILL)
-            os.waitpid(child, 0)
-            pytest.fail("disposable helper did not reach interruption point")
-        time.sleep(0.01)
+    waited, status = _wait_for_checkpoint_death(
+        child, "disposable helper did not reach interruption point"
+    )
     assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
     if (p.root / JOURNAL).exists():
         assert (
@@ -219,6 +229,7 @@ def test_corrupt_canonical_and_rollback_preserves_both_for_operator(platform):
     "point",
     [
         "live_verified",
+        "live_verified_before_directory_sync",
         "rollback_removed",
         "rollback_cleanup_synced",
         "journal_removed",
@@ -253,6 +264,14 @@ def test_sigkill_during_live_finalisation_is_idempotently_recoverable(platform, 
             return result
 
         def sync(self):
+            if (
+                point == "live_verified_before_directory_sync"
+                and (p.root / JOURNAL).exists()
+                and (p.root / ROLLBACK).exists()
+                and json.loads((p.root / JOURNAL).read_bytes())["phase"]
+                == "live_verified"
+            ):
+                die()
             result = original_sync(self)
             rollback = (p.root / ROLLBACK).exists()
             journal = (p.root / JOURNAL).exists()
@@ -271,7 +290,9 @@ def test_sigkill_during_live_finalisation_is_idempotently_recoverable(platform, 
             os._exit(71)
         os._exit(72)
 
-    waited, status = os.waitpid(child, 0)
+    waited, status = _wait_for_checkpoint_death(
+        child, "disposable finalisation helper did not reach checkpoint"
+    )
     assert waited == child
     assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
     result = p.adapter.recover()

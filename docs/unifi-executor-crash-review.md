@@ -87,13 +87,17 @@ as an interruption at that point; an in-memory phase is not durable evidence.
   Canonical/rollback: Issued; R retained. Service/recovery: Initial service state restored; Stage 7
   still outstanding. A fresh process does not infer prior external verification.
 
-* **After TLS success, before durable journal update.** Files/journal: J:
-  service_resumed_pending_live_verification; R. Canonical/rollback: Issued; R old.
-  Service/recovery: Retain pending state and require fresh TLS verification.
+* **After TLS success, before durable journal update.** Files/journal: J may read
+  service_resumed_pending_live_verification or live_verified if replacement
+  occurred before directory fsync; R. Canonical/rollback: Issued; R old.
+  Service/recovery: Pending requires fresh TLS verification. Readable live_verified
+  requires a fresh journal-file and directory durability barrier before cleanup.
+  Barrier failure retains R.
 
 * **After `live_verified` is durable.** Files/journal: J: live_verified; R.
   Canonical/rollback: Issued; R old. Service/recovery: External success is known;
-  validate fixed public/file identities and continue cleanup without signing or import.
+  re-establish the durability barrier, validate fixed public/file identities, and
+  continue cleanup without signing or import.
 
 * **During rollback cleanup.** Files/journal: J: live_verified; R present or absent.
   Canonical/rollback: Issued; R old if present. Service/recovery: Repeat unlink and
@@ -132,7 +136,7 @@ Under the documented writer exclusion, no reviewed cleanup path destroys the
 only proven valid keystore. Concurrent unexcluded namespace/content changes or
 storage that does not honor fsync invalidate that conclusion.
 
-The tests include 24 actual SIGKILL checkpoints in forked disposable helpers,
+The tests include 25 actual SIGKILL checkpoints in forked disposable helpers,
 covering initial journal creation, service stop, copy/import, file/directory
 fsync, rollback link, rename, canonical verification, service resume, durable
 live verification, and finalisation cleanup. These tests bypass Python cleanup
