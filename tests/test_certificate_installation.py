@@ -29,6 +29,7 @@ class FakeBoundary:
         self.events = []
         self.status = 0
         self.failure = None
+        self.finalization_failure = None
         self.after = None
         self.locked = False
 
@@ -63,6 +64,16 @@ class FakeBoundary:
             metadata(2), plan.certificate_chain_der
         )
         return self.status
+
+    def finalize_live_verification(self, expected_leaf_der):
+        self.events.append("finalize")
+        assert (
+            expected_leaf_der
+            == prepare_certificate_import(self.request).certificate_chain_der[0]
+        )
+        if self.finalization_failure:
+            raise self.finalization_failure
+        return "renewal_finalized"
 
 
 def test_prepares_exact_public_reply_and_verifies_import(installation_material):

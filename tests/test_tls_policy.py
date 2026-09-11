@@ -52,6 +52,16 @@ def test_context_loads_configured_public_ca(tmp_path) -> None:
 
     assert context.cert_store_stats()["x509_ca"] == 1
 
+    direct_context = create_client_tls_context(
+        ca_data=certificate.public_bytes(serialization.Encoding.PEM)
+    )
+    assert direct_context.cert_store_stats()["x509_ca"] == 1
+
+
+def test_context_rejects_multiple_ca_sources() -> None:
+    with pytest.raises(TLSConfigurationError, match="mutually exclusive"):
+        create_client_tls_context(ca_name="ca.pem", ca_data=b"public")
+
 
 def test_context_rejects_unsafe_or_oversized_ca_file(tmp_path) -> None:
     ca_file = tmp_path / "ca.pem"

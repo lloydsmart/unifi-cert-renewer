@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from conftest import metadata, public_pem
+from conftest import metadata, public_der, public_pem
 from cryptography import x509
 
 import unifi_executor as executor
@@ -147,6 +147,8 @@ def test_real_production_gate_has_no_enable_argument():
     adapter = executor.ProductionUnifiExecutor()
     with pytest.raises(UnifiOperationError, match="disabled"):
         adapter.recover()
+    with pytest.raises(UnifiOperationError, match="disabled"):
+        adapter.finalize_live_verification(b"public")
     with pytest.raises(UnifiOperationError, match="disabled"), adapter.exclusive():
         pytest.fail("gate reached filesystem")
 
@@ -169,6 +171,121 @@ def test_success_uses_independent_stage_and_retains_rollback(platform):
     with pytest.raises(UnifiOperationError):
         install(p)
     assert p.events.count("import") == 1
+
+
+def test_exact_pending_leaf_finalises_only_after_durable_live_state(platform):
+    p = platform
+    install(p)
+    observed = []
+    write = filesystem._Files.write_journal
+    remove = filesystem._Files.remove
+
+    def journal(self, value):
+        write(self, value)
+        observed.append(("phase", value["phase"]))
+
+    def unlink(self, name):
+        observed.append(("remove", name))
+        return remove(self, name)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(filesystem._Files, "write_journal", journal)
+        patch.setattr(filesystem._Files, "remove", unlink)
+        result = p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+
+    assert result == "renewal_finalized"
+    assert observed.index(("phase", "live_verified")) < observed.index(
+        ("remove", ROLLBACK)
+    )
+    assert not any((p.root / name).exists() for name in (ROLLBACK, JOURNAL, STAGE))
+    assert p.adapter.recover() == "no_active_transaction"
+    assert p.events.count("import") == 1
+
+
+def test_wrong_leaf_never_finalises_unrelated_pending_transaction(
+    platform, installation_material
+):
+    p = platform
+    install(p)
+    wrong = installation_material.issue(key=installation_material.ca_key)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(public_der(wrong))
+    assert (p.root / ROLLBACK).exists()
+    assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == (
+        "service_resumed_pending_live_verification"
+    )
+
+
+def test_failed_live_verified_journal_write_preserves_recovery(platform, monkeypatch):
+    p = platform
+    install(p)
+    original = filesystem._Files.write_journal
+
+    def fail(self, value):
+        if value["phase"] == "live_verified":
+            raise OSError("synthetic-sensitive-diagnostic")
+        return original(self, value)
+
+    monkeypatch.setattr(filesystem._Files, "write_journal", fail)
+    with pytest.raises(UnifiOperationError) as raised:
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert "synthetic" not in str(raised.value)
+    assert (p.root / ROLLBACK).exists()
+    assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == (
+        "service_resumed_pending_live_verification"
+    )
+
+
+@pytest.mark.parametrize("target", [ROLLBACK, JOURNAL])
+@pytest.mark.parametrize("after", [False, True])
+def test_finalisation_cleanup_failure_recovers_idempotently(
+    platform, monkeypatch, target, after
+):
+    p = platform
+    install(p)
+    original = filesystem._Files.remove
+    failed = False
+
+    def fail_once(self, name):
+        nonlocal failed
+        if name == target and not failed:
+            failed = True
+            if after:
+                original(self, name)
+            raise OSError("synthetic-sensitive-diagnostic")
+        return original(self, name)
+
+    monkeypatch.setattr(filesystem._Files, "remove", fail_once)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert failed
+    outcome = p.adapter.recover()
+    assert outcome in {"renewal_finalized", "no_active_transaction"}
+    assert p.adapter.recover() == "no_active_transaction"
+    assert not (p.root / ROLLBACK).exists()
+    assert not (p.root / JOURNAL).exists()
+    assert p.events.count("import") == 1
+
+
+def test_pending_phase_cannot_infer_verification_from_missing_rollback(platform):
+    p = platform
+    install(p)
+    (p.root / ROLLBACK).unlink()
+    with pytest.raises(UnifiOperationError):
+        p.adapter.recover()
+    assert (p.root / JOURNAL).exists()
+
+
+def test_boolean_or_initially_down_transaction_cannot_be_finalised(platform):
+    p = platform
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(True)
+    p.service.up = False
+    install(p)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+    assert (p.root / ROLLBACK).exists()
+    assert (p.root / JOURNAL).exists()
 
 
 def test_no_active_recovery_and_public_inspection_and_csr(platform):

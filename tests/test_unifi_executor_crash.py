@@ -213,3 +213,69 @@ def test_corrupt_canonical_and_rollback_preserves_both_for_operator(platform):
         p.adapter.recover()
     assert all((p.root / name).exists() for name in (CANONICAL, ROLLBACK, JOURNAL))
     assert not p.service.up
+
+
+@pytest.mark.parametrize(
+    "point",
+    [
+        "live_verified",
+        "rollback_removed",
+        "rollback_cleanup_synced",
+        "journal_removed",
+        "journal_cleanup_synced",
+    ],
+)
+def test_sigkill_during_live_finalisation_is_idempotently_recoverable(platform, point):
+    p = platform
+    install(p)
+    child = os.fork()
+    if child == 0:
+
+        def die():
+            os.kill(os.getpid(), signal.SIGKILL)
+
+        original_phase = executor.ProductionUnifiExecutor._phase
+        original_remove = filesystem._Files.remove
+        original_sync = filesystem._Files.sync_directory
+
+        def phase(self, name, **changes):
+            result = original_phase(self, name, **changes)
+            if point == "live_verified" and name == "live_verified":
+                die()
+            return result
+
+        def remove(self, name):
+            result = original_remove(self, name)
+            if point == "rollback_removed" and name == ROLLBACK:
+                die()
+            if point == "journal_removed" and name == JOURNAL:
+                die()
+            return result
+
+        def sync(self):
+            result = original_sync(self)
+            rollback = (p.root / ROLLBACK).exists()
+            journal = (p.root / JOURNAL).exists()
+            if point == "rollback_cleanup_synced" and not rollback and journal:
+                die()
+            if point == "journal_cleanup_synced" and not rollback and not journal:
+                die()
+            return result
+
+        executor.ProductionUnifiExecutor._phase = phase
+        filesystem._Files.remove = remove
+        filesystem._Files.sync_directory = sync
+        try:
+            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        except BaseException:
+            os._exit(71)
+        os._exit(72)
+
+    waited, status = os.waitpid(child, 0)
+    assert waited == child
+    assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
+    result = p.adapter.recover()
+    assert result in {"renewal_finalized", "no_active_transaction"}
+    assert p.adapter.recover() == "no_active_transaction"
+    assert not any((p.root / name).exists() for name in (ROLLBACK, JOURNAL, STAGE))
+    assert p.events.count("import") == 1

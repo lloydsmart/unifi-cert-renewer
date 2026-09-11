@@ -85,7 +85,24 @@ as an interruption at that point; an in-memory phase is not durable evidence.
 
 * **After pending-live phase.** Files/journal: J: service_resumed_pending_live_verification; R.
   Canonical/rollback: Issued; R retained. Service/recovery: Initial service state restored; Stage 7
-  still outstanding.
+  still outstanding. A fresh process does not infer prior external verification.
+
+* **After TLS success, before durable journal update.** Files/journal: J:
+  service_resumed_pending_live_verification; R. Canonical/rollback: Issued; R old.
+  Service/recovery: Retain pending state and require fresh TLS verification.
+
+* **After `live_verified` is durable.** Files/journal: J: live_verified; R.
+  Canonical/rollback: Issued; R old. Service/recovery: External success is known;
+  validate fixed public/file identities and continue cleanup without signing or import.
+
+* **During rollback cleanup.** Files/journal: J: live_verified; R present or absent.
+  Canonical/rollback: Issued; R old if present. Service/recovery: Repeat unlink and
+  directory sync idempotently; absence is accepted only because J is live_verified.
+
+* **After rollback sync, during journal cleanup.** Files/journal: J: live_verified
+  or absent; no R. Canonical/rollback: Issued; no R. Service/recovery: Remove J and
+  sync, or if J is already absent complete the final directory sync. Never mutate
+  the keystore or repeat import.
 
 * **During recovery rename.** Files/journal: Previous J; R may become canonical. Canonical/rollback:
   Old or previous canonical; no two-rename gap. Service/recovery: Down; repeated recovery verifies
@@ -107,17 +124,19 @@ deployment blockers, not guarantees supplied by the callable recovery method.
 Recovery distinguishes old and issued public chains/SPKI and recorded inode
 identity without exporting private material. It cannot prove possession merely
 from those public observations. It never deletes the canonical path. Cleanup
-only follows proven old-state recovery; issued-state recovery retains R. A valid
-canonical with an invalid R, two invalid copies, a missing required R, an
+follows proven old-state recovery or durable `live_verified` state; unverified
+issued-state recovery retains R. A valid canonical with an invalid R, two
+invalid copies, a missing required R before live verification, an
 unexpected valid same-key certificate, or changed inode requires an operator.
 Under the documented writer exclusion, no reviewed cleanup path destroys the
 only proven valid keystore. Concurrent unexcluded namespace/content changes or
 storage that does not honor fsync invalidate that conclusion.
 
-The tests include 19 actual SIGKILL checkpoints in forked disposable helpers,
+The tests include 24 actual SIGKILL checkpoints in forked disposable helpers,
 covering initial journal creation, service stop, copy/import, file/directory
-fsync, rollback link, rename, canonical verification and service resume. These
-tests bypass Python cleanup but retain the kernel and its page cache. They use
-simulated s6 and public-state markers, not a real service or host power failure.
+fsync, rollback link, rename, canonical verification, service resume, durable
+live verification, and finalisation cleanup. These tests bypass Python cleanup
+but retain the kernel and its page cache. They use simulated s6 and public-state
+markers, not a real service or host power failure.
 Separate generated-keystore OpenJDK tests exercise actual import and public
 verification. Neither test group establishes power-loss guarantees.

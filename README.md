@@ -32,13 +32,15 @@ continuity; enforces bounded validity and server-leaf constraints; and performs
 offline path verification against configured public CA certificate data using
 the native `cryptography` X.509 verifier.
 
-The application entrypoint `run_to_installation()` now composes inspection,
-CSR generation/validation, OPNsense signing/retrieval, and installation
-preparation. Its default signs through OPNsense but stops before UniFi mutation.
-An explicit `install=True` exercises the guarded import and post-import checks
-through an injected UniFi execution adapter. A key-owner-local production executor is implemented, but its mutation and
-recovery methods are source-gated pending review. No production CLI or transport
-is supplied.
+The application entrypoint `run_to_installation()` composes inspection, CSR
+generation/validation, OPNsense signing/retrieval, and installation preparation.
+Its default signs through OPNsense but stops before UniFi mutation. An explicit
+`install=True` exercises the guarded import and post-import checks through an
+injected UniFi execution adapter. Supplying an explicit `LiveTLSEndpoint` also
+runs Stage 7 and returns `renewal_complete` only after live verification and
+executor finalisation. A key-owner-local production executor is implemented,
+but its mutation, recovery, and finalisation methods are source-gated pending
+review. No production CLI or transport is supplied.
 
 Stage 6 constructs a validated leaf-plus-CA public reply for the existing
 `unifi` PrivateKeyEntry, checks fresh pre-import state, and verifies the exact
@@ -50,11 +52,24 @@ directly issuing self-signed CA. See
 interfaces, live Java findings, and remaining production-executor requirements.
 
 The executor runs exclusively inside the UniFi key-owning environment and uses
-s6 stop/start for writer exclusion. It does not perform live endpoint verification
-or provide Docker/host orchestration. See the
-[executor and recovery design](docs/unifi-executor.md). A stage-6 result is explicitly **not a completed renewal**.
+s6 stop/start for writer exclusion. Live endpoint verification stays on the
+application side; the executor exposes only exact-pending-certificate
+finalisation. It does not provide Docker/host orchestration. See the
+[executor and recovery design](docs/unifi-executor.md). A Stage-6 result is
+explicitly **not a completed renewal**.
 Production signing and import have not been verified by this implementation.
 Unattended renewal remains future work.
+
+Stage 7 opens a fresh Python TLS connection to an explicit numeric address,
+port, and server identity. The numeric address avoids an unbounded DNS lookup
+outside the readiness deadline. It uses normal CA-chain and hostname verification,
+TLS 1.2 or newer, and exact DER leaf equality with the issued certificate.
+Connection startup retries have both deadline and attempt bounds. An
+authenticated endpoint serving a different leaf fails immediately. Successful
+external verification is recorded as durable `live_verified` journal state
+before rollback deletion; interrupted cleanup is repeatable. A failed live
+check leaves the Stage-6 rollback and journal intact and does not trigger
+signing, import, or automatic rollback.
 
 The intended implementation will be developed incrementally and validated
 against a real UniFi deployment before unattended renewal is enabled.
@@ -115,7 +130,9 @@ The private key must not be exported from UniFi during routine renewal.
    exact post-import public-chain verification are implemented. Mutation remains
    disabled pending review. Disposable Java tests supplement the recorded live
    OpenJDK 25 evidence; production deployment is not enabled.
-7. Live TLS verification following installation.
+7. Live TLS verification following installation. Fresh verified connection,
+   exact issued-leaf equality, durable `live_verified` state, and crash-safe
+   finalisation are implemented. Production invocation remains gated.
 8. Threshold-based one-shot renewal.
 9. Container packaging and external scheduling.
 

@@ -11,24 +11,32 @@ class TLSConfigurationError(ValueError):
     """A safe-to-display TLS trust configuration error."""
 
 
-def create_client_tls_context(*, ca_name: str | None = None) -> ssl.SSLContext:
+def create_client_tls_context(
+    *, ca_name: str | None = None, ca_data: bytes | None = None
+) -> ssl.SSLContext:
     """Create a verified client context with TLS 1.2 as its protocol floor."""
 
     try:
-        if ca_name is None:
+        if ca_name is not None and ca_data is not None:
+            raise TLSConfigurationError("TLS CA sources are mutually exclusive")
+        if ca_name is None and ca_data is None:
             context = ssl.create_default_context()
         else:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            with open_secure_file(ca_name, source_name="TLS CA file") as ca_file:
-                ca_data = ca_file.read(MAX_TLS_CA_FILE_BYTES + 1)
+            source = "TLS CA file" if ca_name is not None else "TLS CA data"
+            if ca_data is None:
+                with open_secure_file(ca_name, source_name="TLS CA file") as ca_file:
+                    ca_data = ca_file.read(MAX_TLS_CA_FILE_BYTES + 1)
+            elif not isinstance(ca_data, bytes):
+                raise TLSConfigurationError("TLS CA data must be bytes")
             if not ca_data:
-                raise TLSConfigurationError("TLS CA file is empty")
+                raise TLSConfigurationError(f"{source} is empty")
             if len(ca_data) > MAX_TLS_CA_FILE_BYTES:
-                raise TLSConfigurationError("TLS CA file exceeds the size limit")
+                raise TLSConfigurationError(f"{source} exceeds the size limit")
             try:
                 ca_text = ca_data.decode("ascii")
             except UnicodeDecodeError:
-                raise TLSConfigurationError("TLS CA file must be ASCII PEM") from None
+                raise TLSConfigurationError(f"{source} must be ASCII PEM") from None
             context.load_verify_locations(cadata=ca_text)
     except TLSConfigurationError:
         raise

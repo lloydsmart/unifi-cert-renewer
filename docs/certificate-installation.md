@@ -1,4 +1,4 @@
-# Certificate installation boundary (issues #9 and #12)
+# Certificate installation and finalisation boundary (issues #9, #12, and #15)
 
 ## Implemented scope
 
@@ -13,15 +13,18 @@
 5. Issued-leaf validation and canonical leaf-plus-CA reply preparation.
 6. By default, return `prepared`; with explicit `install=True`, dispatch the raw
    request to the injected boundary and verify the exact installed public chain.
+7. With an explicit live endpoint, make a fresh authenticated TLS connection,
+   compare the served leaf exactly, and finalise the pending transaction.
 
 **Preparation is not a dry run:** it creates a signed certificate in OPNsense.
 Both `prepared` and `installed_pending_live_verification` have
-`renewal_complete=False`. Stage 7 live TLS verification remains unimplemented.
+`renewal_complete=False`. Only successful Stage 7 verification and cleanup
+return `renewal_complete` with `renewal_complete=True`.
 
-The production executor now exists inside the key-owning boundary. Its mutation
-and recovery methods are unconditionally disabled pending review; an `install`
-argument does not enable them. No production CLI, remote transport, scheduler,
-or deployment/startup recovery service is provided.
+The production executor exists inside the key-owning boundary. Its mutation,
+recovery, and finalisation methods are unconditionally disabled pending review;
+an `install` argument does not enable them. No production CLI, remote transport,
+scheduler, or deployment/startup recovery service is provided.
 
 ## Validation and interface
 
@@ -95,8 +98,12 @@ service exclusion, durable journal transitions, recovery decisions, and deployme
 assumptions. Failures never automatically retry import or signing. Successful
 filesystem recovery cannot establish successful renewal.
 
-Stage 7 must open a new verified TLS connection, validate the configured CA and
-DNS/IP identity, enforce validity and constraints, and compare the served leaf
-exactly with the issued certificate. Only then may the retained rollback and
-pending journal be removed durably. No API accepting a caller's assertion of
-live success is implemented here.
+Stage 7 opens a new verified TLS connection, validates the configured CA and
+DNS/IP identity through the standard TLS stack, and compares the served leaf
+exactly with the issued certificate in DER form. It then calls a narrow executor
+operation with that public leaf. The executor requires it to identify the
+currently pending issued chain, durably records `live_verified`, and only then
+removes rollback and journal state with directory synchronization. The operation
+does not accept a generic success assertion or caller-selected transaction,
+command, or path. Interrupted cleanup is idempotent; failed TLS verification
+leaves recovery material intact.
