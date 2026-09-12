@@ -3,8 +3,8 @@
 There is deliberately no CLI configuration loader.
 Preparation signs through OPNsense but does not mutate UniFi. Optional installation
 requires an explicitly supplied UniFi adapter. Supplying a live endpoint additionally
-requires fresh TLS verification and crash-safe finalisation. The key-owner-local
-production adapter remains source-gated pending review.
+requires fresh TLS verification and crash-safe finalisation. Production callers
+use the fixed, permission-controlled key-owner-local Unix-socket adapter.
 """
 
 from dataclasses import dataclass

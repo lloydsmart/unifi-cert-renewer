@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv sh
+set -eu
+
+exec /opt/unifi-cert-renewer/venv/bin/python \
+    /opt/unifi-cert-renewer/src/unifi_executor_service.py secure-after-init

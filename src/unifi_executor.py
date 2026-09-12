@@ -1,8 +1,9 @@
-"""Review-gated executor that runs ONLY inside the UniFi key-owning environment.
+"""Executor that runs only inside the UniFi key-owning environment.
 
-There is no remote transport, CLI, or deployment switch. Live TLS itself remains
-application-side; this module only durably finalises its exact pending transaction.
-Tests substitute private platform primitives against disposable files only.
+Production access is provided by the fixed local Unix-socket service in
+``unifi_executor_service``. Live TLS itself remains application-side; this module
+only durably finalises its exact pending transaction. Tests substitute private
+platform primitives against disposable files only.
 """
 
 import fcntl
@@ -57,12 +58,6 @@ _PHASES = {
     "recovery_required",
     "recovered_old",
 }
-
-
-def _require_mutation_review():
-    # Intentionally no parameter/environment override. Enabling this requires a
-    # reviewed source change and a separately reviewed deployment/auth boundary.
-    raise UnifiOperationError("production mutation disabled pending review")
 
 
 def _password_environment():
@@ -234,8 +229,7 @@ def _local_identity():
 class ProductionUnifiExecutor:
     """Only instantiate in the key-owning container, never in the renewer.
 
-    Read-only operations are available. Installation/recovery always hit the
-    source-level review gate. No caller-supplied path, executable, argv or secret.
+    No caller supplies a path, executable, argv, alias, service name, or secret.
     """
 
     def __init__(self):
@@ -390,11 +384,11 @@ class ProductionUnifiExecutor:
         _validate_journal(self._journal)
         self._files.write_journal(self._journal)
 
-    def _resume_service(self):
+    def _resume_service(self, *, startup=False):
         self._service.stopped()
         before = self._files.status(CANONICAL)
         public = _public_id(self._collect(CANONICAL))
-        if self._journal["resume"]:
+        if self._journal["resume"] and not startup:
             self._service.start()
             self._expect_stopped = False
         self._files.same(CANONICAL, before)
@@ -403,7 +397,6 @@ class ProductionUnifiExecutor:
 
     @contextmanager
     def exclusive(self):
-        _require_mutation_review()
         with self._locked():
             self._no_transaction()
             before = self._collect(CANONICAL)
@@ -451,7 +444,6 @@ class ProductionUnifiExecutor:
     def import_certificate_reply(
         self, request: CertificateImportRequest, *, expected_before: PublicKeystoreState
     ) -> int:
-        _require_mutation_review()
         self._assert_locked()
         if self._journal is None or self._journal["phase"] != "quiesced":
             raise UnifiOperationError("new quiesced transaction required")
@@ -529,7 +521,6 @@ class ProductionUnifiExecutor:
         Boolean success input and no caller-selected transaction or pathname.
         """
 
-        _require_mutation_review()
         if (
             not isinstance(expected_leaf_der, bytes)
             or not 1 <= len(expected_leaf_der) <= MAX_CERTIFICATE_DER_BYTES
@@ -625,9 +616,10 @@ class ProductionUnifiExecutor:
         self._files.remove(JOURNAL)
         self._files.sync_directory()
 
-    def recover(self) -> str:
-        """Explicit recovery; never re-imports, signs, or reports renewal complete."""
-        _require_mutation_review()
+    def recover(self, *, startup=False) -> str:
+        """Recover without import/signing; startup mode leaves Java for s6 to start."""
+        if type(startup) is not bool:
+            raise UnifiOperationError("invalid recovery mode")
         with self._locked():
             if not self._files.exists(JOURNAL):
                 self._no_transaction()
@@ -709,7 +701,7 @@ class ProductionUnifiExecutor:
                 ):
                     raise UnifiOperationError("unexpected recovery stage")
             self._service.stopped()
-            self._resume_service()
+            self._resume_service(startup=startup)
             self._phase(outcome)
             if outcome == "recovered_old":
                 for name in (STAGE, ROLLBACK, JOURNAL_NEW):

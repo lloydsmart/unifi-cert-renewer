@@ -255,10 +255,31 @@ for the stage and committed canonical file. Prepared plans contain public result
 not executable argv or authorization. One directly issuing self-signed CA is
 currently supported. Neither preparation nor keystore import completes renewal.
 
-The executor's mutation/recovery gate is unconditional pending source review;
-there is no CLI flag or environment variable enabling it. A reviewed transport,
-helper supervisor/startup recovery hook, and authorization policy remain required
-before deployment. See [executor and recovery](docs/unifi-executor.md).
+Production mutation has no runtime enable flag or unsafe bypass. The reviewed
+fixed Unix-socket protocol is the supported renewer-to-executor cross-boundary
+interface. Trusted local root also invokes recovery during startup and can
+instantiate the executor within the existing host-root trust model. The server
+accepts five semantic operations: public inspection, CSR generation, guarded
+installation, recovery, and exact-pending-leaf finalisation. It accepts no
+command, executable, argv, alias, service name, pathname, Python function, or
+Boolean success assertion. See
+[executor and recovery](docs/unifi-executor.md).
+
+The socket directory is a root-owned `0750` bind mount at
+`/run/unifi-cert-renewer`; the socket is root-owned, group-owned by that
+directory's dedicated deployment group, and mode `0660`. Kernel Unix-socket and
+directory permissions authorize only processes in that group. The server and
+client both fail closed if owner, group, type, mode, or socket identity is unsafe.
+The protocol is local-only, versioned, strictly shaped, length-prefixed and
+bounded. One absolute monotonic deadline covers the complete request frame, so
+byte trickling cannot retain the single executor indefinitely. A disconnected
+client does not cancel an operation that has begun, and response transport
+failure is contained to that connection. Failures return one fixed error and
+never reflect diagnostics or input. Host root remains the trusted administrator
+that assigns the deployment group. A root-created socket interrupted between
+bind and final publication is recognized only by its fixed type, mode, owner,
+group, link count, device, directory, and listener lock; other entries fail
+closed and are not removed.
 
 Writer exclusion covers UniFi through s6 quiescence and actual Java process
 inspection, project-controlled renewers through an inherited exclusive lock,
@@ -266,8 +287,21 @@ and cooperating automation using the same lock. Host root is a trusted
 administrative boundary: the executor cannot prevent a privileged administrator
 from bypassing locks, modifying mounts/appdata, or killing the helper. Fresh
 file identity and public-state checks detect observable unexpected changes;
-they do not claim exclusion of malicious host root. Container initialization
-must not run concurrently with an active helper transaction.
+they do not claim exclusion of malicious host root. The supplied s6 recovery
+oneshot is ordered before LinuxServer's UniFi configuration init. Before strict
+recovery, it repairs only the exact root/`abc`-owned executor lock/journal files
+that an interrupted LinuxServer recursive ownership pass can leave behind. It
+validates fixed names, directory, no-follow opens, type, mode, size, links,
+journal structure, reachable phase/flag/artifact combinations, and recorded
+transaction inode relationships while holding the pre-existing executor lock.
+It never creates a replacement lock beside transaction evidence. Mixed
+ownership from an interrupted repair is safe to retry.
+The oneshot leaves Java down while deciding and completing startup recovery. A
+second fixed oneshot repeats this normalization and recovery inspection after
+LinuxServer initialization. The UniFi Java and executor socket longruns depend
+on both steps. A corrupt, ambiguous, unsupported, identity-mismatched, symlinked,
+or otherwise unsafe state fails closed, so Java cannot race recovery or changed
+transaction evidence.
 
 A public-only durable journal records service-down intent before stopping UniFi
 and blocks another transaction. Explicit recovery obtains exclusion, checks for
@@ -288,16 +322,16 @@ extra keystore hard links, and unexpected stage or temporary-journal artifacts.
 A missing rollback under the earlier pending phase is never evidence of
 successful verification.
 
-The journal currently identifies files by device/inode, not a persistent Btrfs
-filesystem/subvolume identity. Remount or reboot can change device numbers and
-force operator recovery; unconditional reboot recovery is not implemented.
-Interrupted initial journal creation or stage ownership setup may also require
-an operator. These limitations and the missing startup supervisor remain
-production enablement blockers. Root-owned artifacts in `abc`-writable appdata
-also rely on excluding all other `abc` writers during a transaction.
+The journal identifies files by runtime device/inode, not a persistent
+filesystem identity. A remount or reboot can change a recorded identity and
+force operator recovery. This is an intentional conservative limitation, not a
+requirement for Btrfs or a reason to ignore a mismatch. Interrupted initial
+journal creation or stage ownership setup may also require an operator.
+Root-owned artifacts in `abc`-writable appdata rely on excluding all other `abc`
+writers during a transaction.
 
-The mechanism used to request CSR generation, import the certificate, and
-restart or reload UniFi must be narrowly scoped.
+The fixed local protocol is the only supported mechanism for requesting CSR
+generation, installation, recovery, and finalisation.
 
 A future renewer container must not receive unrestricted Docker daemon access.
 
@@ -312,8 +346,8 @@ into the renewer.
 Access to the Docker socket can normally be converted into host-level control
 and would violate the intended privilege boundary.
 
-If host orchestration is required, prefer a small external wrapper or another
-explicitly constrained mechanism.
+The production integration uses a permissioned Unix socket and does not require
+host orchestration.
 
 Any design that gives the renewer direct access to the UniFi keystore or Docker
 daemon requires a new threat-model review.

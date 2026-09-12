@@ -1,22 +1,48 @@
 # Key-owner-local executor and recovery
 
-## Deployment gate and trust boundary
+## Production boundary
 
-`ProductionUnifiExecutor` is code for execution **inside the UniFi environment**,
-not inside the renewer. It has no remote server, CLI, Docker interface, or
-production enablement option. `_require_mutation_review()` always raises for
-installation, recovery, and live-success finalisation. Tests replace this
-private gate only for disposable files and simulated service control. Removing
-the gate requires reviewed code and deployment design; unattended production
-mutation remains unsupported.
+`ProductionUnifiExecutor` executes **inside the UniFi environment**, not inside
+the renewer. `SocketUnifiExecutionBoundary` connects from the renewer through
+the fixed `/run/unifi-cert-renewer/executor.sock`. This is an AF_UNIX socket,
+not a network listener. Protocol version 1 supports exactly `inspect`,
+`generate_csr`, `install`, `recover`, and `finalize`.
 
-The reviewed baseline currently requires local root for the narrowly scoped
-helper, `abc` uid/gid `1000:1000`, Linux `/proc`, s6, `/usr/bin/keytool`, and Btrfs
-appdata. Other ownership/filesystem layouts fail closed. This does not require
+Requests are strictly shaped JSON behind a four-byte length prefix and have an
+8 MiB upper bound. One absolute monotonic deadline spans header and body reads;
+each socket timeout is capped to its remaining budget. Public binary values use
+validated base64. Unknown/duplicate fields, operations, malformed encodings,
+and oversized messages fail. There is no generic dispatch and no request field
+for a path, alias, service, executable, argv, password, transaction ID, Python
+callable, or success Boolean. Responses contain normalized public state, a
+public CSR, or a fixed outcome. Errors use a single bounded diagnostic and never
+reflect request or child-process data. Disconnects and response write failures
+are connection-local. An operation that has started runs through its executor
+state transition before the server attempts to return its response.
+
+The renewer-side adapter preserves the existing `UnifiClient` interface. For an
+installation, the server performs the complete shared client validation and
+exclusive transaction locally, then returns normalized public post-state already
+proved equal to the issued chain. The renewer independently repeats the existing
+post-import check against that public result. No lock or partially completed
+mutation session is delegated across the socket.
+
+The root-owned socket directory must be exactly mode `0750`; the root-owned
+socket is mode `0660` and uses the directory's group. Only the dedicated group
+assigned by the host operator can traverse the directory and connect. Both ends
+validate these properties and socket identity. Missing or unsafe prerequisites
+fail closed. Socket bind uses a restrictive publication umask. Under the
+listener lock, restart removes only a root-owned socket with the exact published
+mode, directory device and either the pre-chown root group or final dedicated
+group; wrong-type, wrong-owner, wrong-mode, linked, or replaced entries fail
+closed. Host root remains trusted and controls group membership.
+
+The reviewed baseline requires local root for the narrowly scoped helper, `abc`
+uid/gid `1000:1000`, Linux `/proc`, s6, and `/usr/bin/keytool`. Appdata may use
+Btrfs, XFS, ZFS, ext4, or another normal local filesystem. This does not require
 a root renewer or a Docker socket. The helper's root privilege is confined by its
-operation interface, not by claiming that its Python process is sandboxed from
-other container files. A future transport must authenticate and authorize callers
-and must not expose private helper methods or arbitrary Python invocation.
+fixed operation interface, not by claiming that its Python process is sandboxed
+from other container files.
 
 Host root is trusted. Exclusion covers UniFi, project-controlled helpers, and
 cooperating writers, not a malicious privileged administrator. All other
@@ -171,28 +197,43 @@ those namespace states is reachable after a valid transition. A crash after
 journal removal is recovered as no active transaction; recovery issues a final
 directory sync, and no mutation is repeated.
 
-## Explicit recovery
+## Startup and explicit recovery
 
-A deployment must invoke `recover()` on helper startup before accepting work,
-and after failed attempts. The library supplies the gated recovery operation;
-the supervisor/startup hook is not packaged yet. A `finally` block is not crash
-recovery. After SIGKILL/container/host failure, on-disk state is authoritative.
-Recovery acquires the lock, proves no keytool survives, validates the journal,
-quiesces UniFi, checks protected files, and collects fresh public state.
+A supplied s6 oneshot invokes startup recovery before LinuxServer's UniFi
+configuration init. That init depends on the recovery decision. Before opening
+the strict executor, the oneshot repairs the exact interrupted-normalization
+case: only fixed lock/journal entries may transition from the expected `abc`
+ownership back to root, under the executor lock, after type, mode, size,
+link-count, no-follow, journal-schema, reachable phase/flag/artifact, and
+recorded transaction-inode checks. Transaction evidence without the persistent
+lock is never repaired by creating a replacement lock. All entries are proved
+before the first ownership change. A crash between fixed files leaves a
+root/`abc` mixture that the next boot revalidates and completes.
+An incomplete temporary journal may be normalized only beside a durable phase
+that can perform or retry another journal write. It is rejected beside
+`live_verified`, where the publishing rename already consumed the temporary
+name and only durability checks and cleanup remain.
+Because LinuxServer init recursively assigns appdata to `abc`, a second fixed
+oneshot repeats the same normalization and recovery inspection against the
+post-init state. Both Java and the executor socket depend on this second
+oneshot. The startup recovery mode deliberately leaves Java down; s6 starts it
+only after both oneshots succeed.
 
-Automatic recovery is limited to matching recorded device/inode identities.
-The journal's `st_dev` values are **not persistent filesystem identifiers**:
-Btrfs reports an anonymous device number allocated for an in-memory subvolume
-root. A remount or reboot can change that number. Recovery then retains the
-artifacts and requires operator intervention, even when their contents are
-intact. It must not simply ignore the mismatch or rewrite the journal identity.
-A reviewed persistent filesystem/subvolume identity design remains required
-before enabling unattended recovery across remounts or host reboot. This follows
-from the kernel's [Btrfs stat implementation][btrfs-stat] and
-[anonymous device allocation][btrfs-device].
+Absence of recovery state permits normal startup. Known old or issued state is
+recovered using the existing state machine. Corrupt, ambiguous, unsupported, or
+mismatched identity blocks the oneshot and therefore Java. Repeated starts are
+idempotent.
+Recovery holds the normal transaction lock and never signs, imports, or creates
+a missing keystore. After SIGKILL/container/host failure, on-disk state is
+authoritative.
 
-[btrfs-stat]: https://github.com/torvalds/linux/blob/master/fs/btrfs/inode.c
-[btrfs-device]: https://github.com/torvalds/linux/blob/master/fs/btrfs/disk-io.c
+Automatic recovery is limited to matching recorded runtime device/inode
+identities on every filesystem. These are not persistent filesystem IDs. Btrfs
+is detected explicitly because subvolume roots use anonymous device numbers,
+which can change after remount/reboot. Recovery then retains evidence and
+requires operator intervention even when content appears intact. It never
+ignores or rewrites a mismatch. The same conservative rule applies to any
+filesystem whose recorded runtime identity cannot be proved.
 
 | Observation | Decision |
 | --- | --- |
@@ -216,14 +257,9 @@ initial `.cert-renewer-journal-new` without a journal, or a stage created before
 its ownership/mode normalization completed. They are not silently deleted.
 The former occurs before service stop; the latter can leave UniFi down.
 
-The narrowest future integration is a fixed local startup/supervisor hook inside
-the key-owning environment, ordered before UniFi initialization and s6 service
-startup. It must also handle helper death while the container remains running,
-serialize through the same lock, and run recovery before accepting new work.
-An operator-required result must keep startup blocked and surface a diagnostic;
-the supervisor must not retry import. A future invocation boundary must bind
-authenticated semantic requests to locally authorized CA/identity policy.
-Neither a Docker socket nor a general remote command endpoint is needed.
+An operator-required result keeps startup blocked and emits only a bounded
+diagnostic. The supervisor does not retry import. Neither a Docker socket nor a
+general remote command endpoint is used.
 
 See the [crash-boundary review](unifi-executor-crash-review.md) for the durable
 states, interruption outcomes, and limits of the available test evidence.
@@ -242,18 +278,17 @@ UNIFI_TEST_KEYTOOL=/path/to/test-jdk/bin/keytool .venv/bin/pytest -q
 ```
 
 No production keystore was touched. Tests do not simulate actual host power loss,
-storage firmware failure, privileged hostile mutation, or a production helper
-supervisor. Filesystem durability assumes Btrfs and storage honoring successful
-fsync calls. Public-state checks do not extract private keys to test possession;
+storage firmware failure, or privileged hostile mutation. Filesystem durability
+assumes the local filesystem and storage honor successful fsync calls.
+Public-state checks do not extract private keys to test possession;
 existing PrivateKeyEntry structure, CSR proof-of-possession, staged import and
 exact public-key continuity provide the available evidence.
 
-Deployment authentication, startup recovery integration, and review of the
-helper's privileges remain prerequisites to removing the gate. Stage 7 is
-implemented in source and tests, including real disposable loopback TLS servers,
-but it does not remove the production gate. Generated TLS server keys in tests
-are loaded through Linux memory-backed file descriptors and never receive a
-filesystem pathname. Deployment transport/authentication,
-guaranteed supervisor/startup recovery wiring, and persistent Btrfs
-filesystem/subvolume identity remain unresolved. Threshold renewal, container
-packaging, scheduling, and key rotation also remain later work.
+Deployment authentication and startup recovery integration are implemented by
+the fixed Unix socket and s6 dependency overlay. Stage 7 is implemented in
+source and tests, including real disposable loopback TLS servers. Generated TLS
+server keys in tests are loaded through Linux memory-backed file descriptors and
+never receive a filesystem pathname. Persistent recovery identity across an
+ambiguous remount/reboot remains an intentional operator-recovery case.
+Threshold renewal, general renewer-container packaging, scheduling, and key
+rotation remain later work.
