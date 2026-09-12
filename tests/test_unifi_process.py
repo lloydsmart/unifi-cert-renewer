@@ -217,22 +217,33 @@ def test_proc_permission_failure_is_not_assumed_absence(tmp_path, monkeypatch):
         process._processes()
 
 
-def _proc_entry(tmp_path, command, executable="java"):
+def _proc_entry(tmp_path, command, executable="java", *, uid=1000, gid=1000):
     pid = tmp_path / "123"
     pid.mkdir()
     (pid / "exe").symlink_to(f"/usr/bin/{executable}")
     (pid / "cmdline").write_bytes(command)
     (pid / "status").write_bytes(
-        b"Name:\tjava\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\n"
+        (
+            f"Name:\tjava\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
+            f"Gid:\t{gid}\t{gid}\t{gid}\t{gid}\n"
+        ).encode()
     )
     return pid
 
 
 def test_fixed_abc_fallback_classifies_genuine_unifi(tmp_path, monkeypatch):
-    _proc_entry(tmp_path, b"java\0-Xmx1024M\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    uid, gid = os.getuid(), os.getgid()
+    _proc_entry(
+        tmp_path,
+        b"java\0-Xmx1024M\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0",
+        uid=uid,
+        gid=gid,
+    )
     monkeypatch.setattr(
         process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
     )
+    monkeypatch.setattr(process, "ABC_UID", uid)
+    monkeypatch.setattr(process, "ABC_GID", gid)
     original = process._inspect_process_fd
 
     def cross_uid_denial(process_fd):
