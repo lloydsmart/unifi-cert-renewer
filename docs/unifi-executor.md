@@ -209,6 +209,10 @@ recorded transaction-inode checks. Transaction evidence without the persistent
 lock is never repaired by creating a replacement lock. All entries are proved
 before the first ownership change. A crash between fixed files leaves a
 root/`abc` mixture that the next boot revalidates and completes.
+An incomplete temporary journal may be normalized only beside a durable phase
+that can perform or retry another journal write. It is rejected beside
+`live_verified`, where the publishing rename already consumed the temporary
+name and only durability checks and cleanup remain.
 Because LinuxServer init recursively assigns appdata to `abc`, a second fixed
 oneshot repeats the same normalization and recovery inspection against the
 post-init state. Both Java and the executor socket depend on this second

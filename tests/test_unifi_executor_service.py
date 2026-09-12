@@ -529,6 +529,39 @@ def pending_normalization_state(root):
         path.chmod(0o600)
 
 
+def live_verified_normalization_state(root):
+    canonical = root / service.CANONICAL
+    canonical.write_bytes(b"public-test-old-keystore-placeholder")
+    canonical.chmod(0o600)
+    old_identity = canonical.stat()
+    os.link(canonical, root / service.ROLLBACK)
+    canonical.unlink()
+    canonical.write_bytes(b"public-test-issued-keystore-placeholder")
+    canonical.chmod(0o600)
+    issued_identity = canonical.stat()
+    journal = {
+        "version": 1,
+        "transaction": "a" * 32,
+        "phase": "live_verified",
+        "resume": True,
+        "old": {"spki": "b" * 64, "chain": ["c" * 64]},
+        "issued": {"spki": "b" * 64, "chain": ["d" * 64, "e" * 64]},
+        "old_inode": [old_identity.st_dev, old_identity.st_ino],
+        "stage_inode": [issued_identity.st_dev, issued_identity.st_ino],
+        "rollback_expected": True,
+        "commit_possible": True,
+    }
+    encoded = json.dumps(journal).encode("ascii")
+    for name, content in (
+        (service.LOCK, b""),
+        (service.JOURNAL, encoded),
+        (service.JOURNAL_NEW, encoded),
+    ):
+        path = root / name
+        path.write_bytes(content)
+        path.chmod(0o600)
+
+
 def anchor_test_config(monkeypatch, tmp_path):
     original_open = os.open
     monkeypatch.setattr(
@@ -539,6 +572,23 @@ def anchor_test_config(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(service, "_local_identity", lambda: (os.getuid(), os.getgid()))
+
+
+def mark_admin_entry_root_owned(monkeypatch, root_owned):
+    original = service._admin_entry
+
+    def mixed(root, name, descriptor, uid, gid):
+        entry = original(root, name, descriptor, uid, gid)
+        if name not in root_owned:
+            return entry
+        return SimpleNamespace(
+            st_dev=entry.st_dev,
+            st_ino=entry.st_ino,
+            st_uid=0,
+            st_gid=0,
+        )
+
+    monkeypatch.setattr(service, "_admin_entry", mixed)
 
 
 def test_pre_recovery_normalization_accepts_valid_pending_transaction(
@@ -669,6 +719,82 @@ def test_phase_impossible_transaction_is_rejected_before_ownership_change(
     )
     journal_path.write_text(json.dumps(journal), encoding="ascii")
     journal_path.chmod(0o600)
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+    assert ownership == []
+
+
+@pytest.mark.parametrize(
+    ("root_owned", "rollback_present"),
+    [
+        pytest.param({service.LOCK}, True, id="root-lock"),
+        pytest.param({service.JOURNAL_NEW}, False, id="root-temporary-no-rollback"),
+    ],
+)
+def test_live_verified_temporary_journal_is_rejected_before_ownership_change(
+    tmp_path, monkeypatch, root_owned, rollback_present
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    live_verified_normalization_state(root)
+    if not rollback_present:
+        (root / service.ROLLBACK).unlink()
+    anchor_test_config(monkeypatch, tmp_path)
+    mark_admin_entry_root_owned(monkeypatch, root_owned)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+    assert ownership == []
+    assert (root / service.JOURNAL).exists()
+    assert (root / service.JOURNAL_NEW).exists()
+
+
+@pytest.mark.parametrize("phase", ["quiescing", "recovered_old"])
+def test_reachable_temporary_journal_is_repaired_without_parsing_contents(
+    tmp_path, monkeypatch, phase
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    journal_path = root / service.JOURNAL
+    journal = json.loads(journal_path.read_text(encoding="ascii"))
+    journal["phase"] = phase
+    journal_path.write_text(json.dumps(journal), encoding="ascii")
+    journal_path.chmod(0o600)
+    temporary = root / service.JOURNAL_NEW
+    temporary.write_bytes(b'{"version":')
+    temporary.chmod(0o600)
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    assert service.secure_after_linuxserver_init() == "executor_state_secured"
+    assert ownership == [(0, 0), (0, 0), (0, 0)]
+
+
+def test_temporary_journal_without_primary_is_rejected_before_ownership_change(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    for name, content in ((service.LOCK, b""), (service.JOURNAL_NEW, b"partial")):
+        path = root / name
+        path.write_bytes(content)
+        path.chmod(0o600)
     anchor_test_config(monkeypatch, tmp_path)
     ownership = []
     monkeypatch.setattr(

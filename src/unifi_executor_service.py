@@ -57,6 +57,21 @@ _RECOVERY_RESULTS = frozenset(
         "renewal_finalized",
     }
 )
+_JOURNAL_NEW_PHASES = frozenset(
+    {
+        "quiescing",
+        "quiesced",
+        "staging",
+        "staged_validated",
+        "rollback_durable",
+        "commit_possible",
+        "committed",
+        "canonical_verified",
+        "service_resumed_pending_live_verification",
+        "recovery_required",
+        "recovered_old",
+    }
+)
 _monotonic = time.monotonic
 
 
@@ -552,7 +567,9 @@ def _path_exists(root, name):
         return False
 
 
-def _validate_normalization_transaction(root, journal, uid, gid):
+def _validate_normalization_transaction(
+    root, journal, uid, gid, *, temporary_journal_present
+):
     journal = _validate_journal(journal)
     progress = (
         journal["issued"] is not None,
@@ -680,6 +697,12 @@ def _validate_normalization_transaction(root, journal, uid, gid):
         and journal["phase"] not in {"recovered_old"}
     ):
         raise UnifiOperationError("unexpected transaction rollback")
+    # Listed phases can enter or retry a later journal write. live_verified can
+    # only establish its barrier and clean up, and the atomic rename that
+    # published it consumed its temporary source name. Future phases fail closed
+    # until their write transitions are reviewed and explicitly added.
+    if temporary_journal_present and journal["phase"] not in _JOURNAL_NEW_PHASES:
+        raise UnifiOperationError("unexpected phase temporary journal")
 
 
 def secure_after_linuxserver_init():
@@ -741,7 +764,13 @@ def secure_after_linuxserver_init():
             if len(data) > MAX_JOURNAL:
                 raise UnifiOperationError("recovery journal exceeds limit")
             journal = json.loads(data.decode("ascii"), object_pairs_hook=_object)
-            _validate_normalization_transaction(root, journal, uid, gid)
+            _validate_normalization_transaction(
+                root,
+                journal,
+                uid,
+                gid,
+                temporary_journal_present=JOURNAL_NEW in descriptors,
+            )
 
         # All names and transaction identity were proved before the first chown.
         # A crash between these fixed operations is restart-safe because mixed
