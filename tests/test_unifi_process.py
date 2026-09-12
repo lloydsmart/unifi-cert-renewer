@@ -1,5 +1,6 @@
 import contextlib
 import fcntl
+import inspect
 import os
 import shutil
 import signal
@@ -197,15 +198,211 @@ def test_unlinked_executable_remains_a_detected_writer(tmp_path):
 
 
 def test_proc_permission_failure_is_not_assumed_absence(tmp_path, monkeypatch):
-    (tmp_path / "123").mkdir()
+    pid = tmp_path / "123"
+    pid.mkdir()
+    (pid / "status").write_bytes(
+        b"Uid:\t1001\t1001\t1001\t1001\nGid:\t1001\t1001\t1001\t1001\n"
+    )
     monkeypatch.setattr(
         process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
     )
 
-    def denied(*args):
+    def denied(*args, **kwargs):
         raise PermissionError
 
     monkeypatch.setattr(process.os, "readlink", denied)
+    with pytest.raises(UnifiOperationError):
+        process._processes()
+
+
+def _proc_entry(tmp_path, command, executable="java"):
+    pid = tmp_path / "123"
+    pid.mkdir()
+    (pid / "exe").symlink_to(f"/usr/bin/{executable}")
+    (pid / "cmdline").write_bytes(command)
+    (pid / "status").write_bytes(
+        b"Name:\tjava\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\n"
+    )
+    return pid
+
+
+def test_fixed_abc_fallback_classifies_genuine_unifi(tmp_path, monkeypatch):
+    _proc_entry(tmp_path, b"java\0-Xmx1024M\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    monkeypatch.setattr(
+        process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
+    )
+    original = process._inspect_process_fd
+
+    def cross_uid_denial(process_fd):
+        if os.getpid() == parent_pid:
+            raise PermissionError
+        return original(process_fd)
+
+    parent_pid = os.getpid()
+    monkeypatch.setattr(process, "_inspect_process_fd", cross_uid_denial)
+    monkeypatch.setattr(process, "_drop_inspection_identity", lambda: None)
+    assert process._processes() == (True, False)
+
+
+def test_fallback_is_not_available_for_other_identity(tmp_path, monkeypatch):
+    _proc_entry(tmp_path, b"java\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    monkeypatch.setattr(
+        process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
+    )
+    monkeypatch.setattr(
+        process,
+        "_inspect_process_fd",
+        lambda _fd: (_ for _ in ()).throw(PermissionError()),
+    )
+    monkeypatch.setattr(
+        process,
+        "_abc_process_identity",
+        lambda _fd: (_ for _ in ()).throw(
+            UnifiOperationError("cannot establish process exclusion")
+        ),
+    )
+    called = False
+
+    def fallback(_fd):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(process, "_inspect_as_abc", fallback)
+    with pytest.raises(UnifiOperationError):
+        process._processes()
+    assert not called
+
+
+def test_fixed_fallback_has_no_caller_selected_identity_or_command():
+    assert tuple(inspect.signature(process._inspect_as_abc).parameters) == (
+        "process_fd",
+    )
+    assert (process.ABC_UID, process.ABC_GID) == (1000, 1000)
+
+
+def test_privilege_drop_clears_groups_and_all_saved_ids(monkeypatch):
+    calls = []
+    monkeypatch.setattr(process.os, "setgroups", lambda groups: calls.append(groups))
+    monkeypatch.setattr(
+        process.os, "setresgid", lambda *ids: calls.append(("gid", ids))
+    )
+    monkeypatch.setattr(
+        process.os, "setresuid", lambda *ids: calls.append(("uid", ids))
+    )
+    monkeypatch.setattr(process.os, "getgroups", lambda: [])
+    monkeypatch.setattr(process.os, "getresgid", lambda: (1000, 1000, 1000))
+    monkeypatch.setattr(process.os, "getresuid", lambda: (1000, 1000, 1000))
+    process._drop_inspection_identity()
+    assert calls == [
+        [],
+        ("gid", (1000, 1000, 1000)),
+        ("uid", (1000, 1000, 1000)),
+    ]
+
+
+def test_same_uid_inspection_still_requires_executable(monkeypatch):
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+
+    def denied(_fd):
+        raise PermissionError
+
+    monkeypatch.setattr(process, "_inspect_process_fd", denied)
+    monkeypatch.setattr(process, "_drop_inspection_identity", lambda: None)
+    with pytest.raises(UnifiOperationError):
+        process._inspect_as_abc(write_fd)
+    os.close(write_fd)
+
+
+def test_privilege_drop_failure_fails_closed(tmp_path, monkeypatch):
+    pid = _proc_entry(tmp_path, b"java\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    fd = os.open(pid, os.O_RDONLY | os.O_DIRECTORY)
+    monkeypatch.setattr(
+        process,
+        "_drop_inspection_identity",
+        lambda: (_ for _ in ()).throw(OSError()),
+    )
+    try:
+        with pytest.raises(UnifiOperationError):
+            process._inspect_as_abc(fd)
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.parametrize("result", [b"XX", None])
+def test_child_corruption_or_unexpected_exit_fails_closed(
+    tmp_path, monkeypatch, result
+):
+    pid = _proc_entry(tmp_path, b"java\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    fd = os.open(pid, os.O_RDONLY | os.O_DIRECTORY)
+
+    def child(_process_fd, result_fd):
+        if result is not None:
+            os.write(result_fd, result)
+        os._exit(7 if result is None else 0)
+
+    monkeypatch.setattr(process, "_child_inspection", child)
+    try:
+        with pytest.raises(UnifiOperationError):
+            process._inspect_as_abc(fd)
+    finally:
+        os.close(fd)
+
+
+def test_child_wait_is_bounded_and_child_is_reaped(tmp_path, monkeypatch):
+    pid = _proc_entry(tmp_path, b"java\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    fd = os.open(pid, os.O_RDONLY | os.O_DIRECTORY)
+    reaped = []
+    original = process._kill_and_reap
+
+    def child(_process_fd, _result_fd):
+        time.sleep(20)
+        os._exit(0)
+
+    def kill_and_reap(child_pid):
+        original(child_pid)
+        reaped.append(child_pid)
+
+    monkeypatch.setattr(process, "PROCESS_INSPECTION_TIMEOUT", 0.1)
+    monkeypatch.setattr(process, "_child_inspection", child)
+    monkeypatch.setattr(process, "_kill_and_reap", kill_and_reap)
+    started = time.monotonic()
+    try:
+        with pytest.raises(UnifiOperationError):
+            process._inspect_as_abc(fd)
+    finally:
+        os.close(fd)
+    assert time.monotonic() - started < 2
+    with pytest.raises(ChildProcessError):
+        os.waitpid(reaped[0], os.WNOHANG)
+
+
+def test_disappearing_process_remains_tolerated(tmp_path, monkeypatch):
+    (tmp_path / "123").mkdir()
+    monkeypatch.setattr(
+        process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
+    )
+    monkeypatch.setattr(
+        process,
+        "_inspect_process_fd",
+        lambda _fd: (_ for _ in ()).throw(FileNotFoundError()),
+    )
+    assert process._processes() == (False, False)
+
+
+def test_ownership_change_after_fallback_fails_closed(tmp_path, monkeypatch):
+    _proc_entry(tmp_path, b"java\0-jar\0/usr/lib/unifi/lib/ace.jar\0start\0")
+    monkeypatch.setattr(
+        process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
+    )
+    monkeypatch.setattr(
+        process,
+        "_inspect_process_fd",
+        lambda _fd: (_ for _ in ()).throw(PermissionError()),
+    )
+    identities = iter(((1, 2, 1000, 1000), (1, 3, 1000, 1000)))
+    monkeypatch.setattr(process, "_abc_process_identity", lambda _fd: next(identities))
+    monkeypatch.setattr(process, "_inspect_as_abc", lambda _fd: (True, False))
     with pytest.raises(UnifiOperationError):
         process._processes()
 

@@ -303,6 +303,17 @@ on both steps. A corrupt, ambiguous, unsupported, identity-mismatched, symlinked
 or otherwise unsafe state fails closed, so Java cannot race recovery or changed
 transaction evidence.
 
+Process inspection requires both the proc executable link and a bounded
+NUL-separated command line. For the normal LinuxServer case where root cannot
+resolve an `abc` process's executable link, a short-lived child may inspect the
+already anchored proc directory only after its ownership and complete status
+identity prove the fixed uid/gid `1000:1000`. The child closes unrelated file
+descriptors, clears supplementary groups, irreversibly drops all real,
+effective, and saved GIDs and UIDs to 1000, and returns only a fixed bounded
+classification. `CAP_SYS_PTRACE` is neither required nor granted. Any other
+permission failure, identity change, child failure, or same-UID restriction
+fails closed; command-line-only matching is never accepted.
+
 A public-only durable journal records service-down intent before stopping UniFi
 and blocks another transaction. Explicit recovery obtains exclusion, checks for
 surviving keytool processes, quiesces UniFi, and compares fresh public state and

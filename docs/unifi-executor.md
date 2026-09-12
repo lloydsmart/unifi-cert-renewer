@@ -48,7 +48,11 @@ Host root is trusted. Exclusion covers UniFi, project-controlled helpers, and
 cooperating writers, not a malicious privileged administrator. All other
 project-controlled automation must use the same lock. Container initialization
 and host maintenance must not overlap an active transaction. The helper must
-have a complete, readable process namespace; restricted `/proc` is unsupported.
+have a complete process namespace. Normal LinuxServer cross-UID restrictions on
+`/proc/<abc-pid>/exe` are handled by a fixed, short-lived inspection child that
+drops irreversibly to uid/gid `1000:1000`; `CAP_SYS_PTRACE` is not required. A
+host that prevents even this same-UID inspection is unsupported and fails
+closed.
 
 This exclusion assumption also covers other processes running as `abc`.
 Root ownership of a journal or lock does not prevent their removal from an
@@ -109,6 +113,17 @@ kill arbitrary pre-existing keytool processes or retry their operations.
 `/run/service/svc-unifi-network-application`. The helper checks stable s6 state
 and positively scans actual executable/argv identity for
 `java ... -jar /usr/lib/unifi/lib/ace.jar start`; shell text does not match.
+Each numeric proc directory is opened once and subsequent identity reads are
+relative to that descriptor. Root-visible processes retain the direct path. A
+permission-denied process uses the same-UID child only after proc ownership and
+all real/effective/saved/filesystem UID and GID values prove the fixed
+`1000:1000` identity. The child closes unrelated descriptors, clears
+supplementary groups, sets all GIDs and UIDs to 1000, verifies the drop, and
+returns one bounded classification byte through a pipe before exiting. The
+parent bounds the wait and always reaps it, then rechecks the anchored identity.
+Drop, IPC, timeout, ownership, or identity ambiguity fails closed. Both the
+`exe` link and bounded `cmdline` remain mandatory; there is no command-line-only
+fallback.
 Resume uses `-wU -T 25000 -u` and checks readiness and the actual JVM. Initially
 down services remain down. Canonical identity/public state are checked across
 resume. Unexpected surviving/uninspectable writers retain the helper's lock;
