@@ -14,6 +14,7 @@ import socket
 import stat
 import struct
 import sys
+import time
 from contextlib import contextmanager
 
 from unifi_client import (
@@ -28,8 +29,17 @@ from unifi_client import (
     inspect_public_keystore_state,
     prepare_certificate_import,
 )
-from unifi_executor import ProductionUnifiExecutor, _local_identity
-from unifi_executor_files import JOURNAL, JOURNAL_NEW, LOCK, MAX_JOURNAL
+from unifi_executor import ProductionUnifiExecutor, _local_identity, _validate_journal
+from unifi_executor_files import (
+    CANONICAL,
+    JOURNAL,
+    JOURNAL_NEW,
+    LOCK,
+    MAX_JOURNAL,
+    MAX_STORE,
+    ROLLBACK,
+    STAGE,
+)
 
 PROTOCOL_VERSION = 1
 SOCKET_DIRECTORY = "/run/unifi-cert-renewer"
@@ -47,6 +57,7 @@ _RECOVERY_RESULTS = frozenset(
         "renewal_finalized",
     }
 )
+_monotonic = time.monotonic
 
 
 def _object(pairs):
@@ -176,21 +187,27 @@ def _decode_import_request(value):
     return request
 
 
-def _read_message(connection):
-    header = _read_exact(connection, 4)
+def _read_message(connection, *, deadline=None):
+    if deadline is None:
+        deadline = _monotonic() + SOCKET_TIMEOUT_SECONDS
+    header = _read_exact(connection, 4, deadline=deadline)
     length = struct.unpack("!I", header)[0]
     if not 1 <= length <= MAX_MESSAGE_BYTES:
         raise ValueError
-    data = _read_exact(connection, length)
+    data = _read_exact(connection, length, deadline=deadline)
     try:
         return json.loads(data.decode("utf-8"), object_pairs_hook=_object)
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError from None
 
 
-def _read_exact(connection, length):
+def _read_exact(connection, length, *, deadline):
     data = bytearray()
     while len(data) < length:
+        remaining = deadline - _monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        connection.settimeout(remaining)
         chunk = connection.recv(length - len(data))
         if not chunk:
             raise ValueError
@@ -223,6 +240,24 @@ def _decode_envelope(value):
     if not isinstance(value["arguments"], dict):
         raise ValueError
     return value["operation"], value["arguments"]
+
+
+def _decode_response(response):
+    if not isinstance(response, dict):
+        raise ValueError
+    response = _exact_dict(
+        response,
+        {"version", "ok", "result"}
+        if response.get("ok") is True
+        else {"version", "ok", "error"},
+    )
+    if (
+        type(response["version"]) is not int
+        or response["version"] != PROTOCOL_VERSION
+        or response["ok"] is not True
+    ):
+        raise ValueError
+    return response["result"]
 
 
 def _inspection_state(inspection, chain):
@@ -279,9 +314,9 @@ class _ProtocolHandler:
         return {"outcome": outcome}
 
     def handle(self, connection):
-        connection.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
         try:
-            request = _read_message(connection)
+            request_deadline = _monotonic() + REQUEST_READ_TIMEOUT_SECONDS
+            request = _read_message(connection, deadline=request_deadline)
             connection.settimeout(SOCKET_TIMEOUT_SECONDS)
             result = self.dispatch(request)
             response = {"version": PROTOCOL_VERSION, "ok": True, "result": result}
@@ -292,7 +327,13 @@ class _ProtocolHandler:
                 "ok": False,
                 "error": "executor_operation_failed",
             }
-        _write_message(connection, response)
+        try:
+            _write_message(connection, response)
+        except OSError:
+            # The semantic operation has already completed or failed. A client
+            # disconnect cannot cancel it and is not a server-wide failure.
+            return False
+        return True
 
 
 def _validate_socket_directory():
@@ -335,6 +376,27 @@ def _open_socket_lock(directory_fd):
     return lock
 
 
+def _remove_stale_socket(directory_fd, directory):
+    try:
+        existing = os.stat("executor.sock", dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    # bind() publishes a root-owned 0660 socket atomically under the controlled
+    # umask below. A crash may leave its group as root before chown completes.
+    # The locked 0750 directory is not writable by the invoking group, so no
+    # unprivileged caller can manufacture either accepted state.
+    if (
+        not stat.S_ISSOCK(existing.st_mode)
+        or stat.S_IMODE(existing.st_mode) != 0o660
+        or existing.st_uid != 0
+        or existing.st_gid not in {0, directory.st_gid}
+        or existing.st_nlink != 1
+        or existing.st_dev != directory.st_dev
+    ):
+        raise UnifiOperationError("unsafe existing executor socket")
+    os.unlink("executor.sock", dir_fd=directory_fd)
+
+
 @contextmanager
 def _listener():
     directory = _validate_socket_directory()
@@ -351,27 +413,35 @@ def _listener():
             raise UnifiOperationError("executor socket directory changed")
         lock = _open_socket_lock(directory_fd)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
-            existing = os.stat(
-                "executor.sock", dir_fd=directory_fd, follow_symlinks=False
-            )
-        except FileNotFoundError:
-            pass
-        else:
-            if (
-                not stat.S_ISSOCK(existing.st_mode)
-                or stat.S_IMODE(existing.st_mode) != 0o660
-                or (existing.st_uid, existing.st_gid, existing.st_nlink)
-                != (0, directory.st_gid, 1)
-            ):
-                raise UnifiOperationError("unsafe existing executor socket")
-            os.unlink("executor.sock", dir_fd=directory_fd)
+        _remove_stale_socket(directory_fd, directory)
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        listener.bind(SOCKET_PATH)
+        previous_umask = os.umask(0o117)
+        try:
+            listener.bind(SOCKET_PATH)
+        finally:
+            os.umask(previous_umask)
+        created = os.stat("executor.sock", dir_fd=directory_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISSOCK(created.st_mode)
+            or stat.S_IMODE(created.st_mode) != 0o660
+            or created.st_uid != 0
+            or created.st_gid not in {0, directory.st_gid}
+            or created.st_nlink != 1
+            or created.st_dev != directory.st_dev
+        ):
+            raise UnifiOperationError("unsafe newly bound executor socket")
+        socket_identity = (created.st_dev, created.st_ino)
         os.chown(SOCKET_PATH, 0, directory.st_gid, follow_symlinks=False)
         os.chmod(SOCKET_PATH, 0o660, follow_symlinks=False)
         created = os.stat("executor.sock", dir_fd=directory_fd, follow_symlinks=False)
-        socket_identity = (created.st_dev, created.st_ino)
+        if (
+            (created.st_dev, created.st_ino) != socket_identity
+            or not stat.S_ISSOCK(created.st_mode)
+            or stat.S_IMODE(created.st_mode) != 0o660
+            or (created.st_uid, created.st_gid, created.st_nlink)
+            != (0, directory.st_gid, 1)
+        ):
+            raise UnifiOperationError("executor socket changed during setup")
         listener.listen(4)
         yield listener
     except (OSError, ValueError):
@@ -393,13 +463,17 @@ def _listener():
         os.close(directory_fd)
 
 
+def _serve_client(handler, connection):
+    with connection:
+        handler.handle(connection)
+
+
 def serve_forever():
     handler = _ProtocolHandler()
     with _listener() as listener:
         while True:
             connection, _ = listener.accept()
-            with connection:
-                handler.handle(connection)
+            _serve_client(handler, connection)
 
 
 def _startup_data_directory_absent():
@@ -423,6 +497,10 @@ def _startup_data_directory_absent():
 def recover_startup():
     if _startup_data_directory_absent():
         return "no_active_transaction"
+    # LinuxServer may have been interrupted after recursively changing appdata
+    # ownership on the previous boot. Normalize only validated executor admin
+    # files before the strict executor attempts to open them.
+    secure_after_linuxserver_init()
     # The recovery decision and cleanup complete before the dependent s6 longrun
     # becomes eligible.  Do not start Java from inside this oneshot.
     outcome = ProductionUnifiExecutor().recover(startup=True)
@@ -431,11 +509,185 @@ def recover_startup():
     return outcome
 
 
+def _admin_entry(root, name, descriptor, uid, gid):
+    before = os.stat(name, dir_fd=root, follow_symlinks=False)
+    opened = os.fstat(descriptor)
+    maximum = 0 if name == LOCK else MAX_JOURNAL
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or stat.S_IMODE(before.st_mode) != 0o600
+        or (before.st_uid, before.st_gid) not in {(0, 0), (uid, gid)}
+        or before.st_dev != os.fstat(root).st_dev
+        or not 0 <= before.st_size <= maximum
+        or before.st_nlink != 1
+        or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+    ):
+        raise UnifiOperationError("unsafe executor administration state")
+    return before
+
+
+def _transaction_entry(root, name, uid, gid):
+    try:
+        value = os.stat(name, dir_fd=root, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    links = {1, 2} if name in {CANONICAL, ROLLBACK} else {1}
+    if (
+        not stat.S_ISREG(value.st_mode)
+        or stat.S_IMODE(value.st_mode) != 0o600
+        or (value.st_uid, value.st_gid) != (uid, gid)
+        or value.st_dev != os.fstat(root).st_dev
+        or not 0 <= value.st_size <= MAX_STORE
+        or value.st_nlink not in links
+    ):
+        raise UnifiOperationError("unsafe transaction state during normalization")
+    return value
+
+
+def _path_exists(root, name):
+    try:
+        os.stat(name, dir_fd=root, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _validate_normalization_transaction(root, journal, uid, gid):
+    journal = _validate_journal(journal)
+    progress = (
+        journal["issued"] is not None,
+        journal["stage_inode"] is not None,
+        journal["rollback_expected"],
+        journal["commit_possible"],
+    )
+    progress_initial = (False, False, False, False)
+    progress_staging = (True, False, False, False)
+    progress_staged = (True, True, False, False)
+    progress_rollback = (True, True, True, False)
+    progress_committable = (True, True, True, True)
+    allowed_progress = {
+        "quiescing": {progress_initial},
+        "quiesced": {progress_initial},
+        "staging": {progress_staging, progress_staged},
+        "staged_validated": {progress_staged},
+        "rollback_durable": {progress_rollback},
+        "commit_possible": {progress_committable},
+        "committed": {progress_committable},
+        "canonical_verified": {progress_committable},
+        "service_resumed_pending_live_verification": {progress_committable},
+        "live_verified": {progress_committable},
+        "recovery_required": {
+            progress_initial,
+            progress_staging,
+            progress_staged,
+            progress_rollback,
+            progress_committable,
+        },
+        "recovered_old": {
+            progress_initial,
+            progress_staging,
+            progress_staged,
+            progress_rollback,
+            progress_committable,
+        },
+    }
+    if progress not in allowed_progress[journal["phase"]]:
+        raise UnifiOperationError("unreachable transaction phase during normalization")
+
+    canonical = _transaction_entry(root, CANONICAL, uid, gid)
+    if canonical is None:
+        raise UnifiOperationError("canonical keystore missing during normalization")
+    canonical_identity = (canonical.st_dev, canonical.st_ino)
+    old_identity = tuple(journal["old_inode"])
+    stage_identity = (
+        tuple(journal["stage_inode"]) if journal["stage_inode"] is not None else None
+    )
+    if journal["phase"] in {
+        "committed",
+        "canonical_verified",
+        "service_resumed_pending_live_verification",
+        "live_verified",
+    }:
+        allowed_canonical = {stage_identity}
+    elif journal["phase"] == "commit_possible" or (
+        journal["phase"] == "recovery_required" and progress == progress_committable
+    ):
+        allowed_canonical = {old_identity, stage_identity}
+    else:
+        allowed_canonical = {old_identity}
+    if canonical_identity not in allowed_canonical:
+        raise UnifiOperationError("canonical identity changed during normalization")
+
+    rollback_entry = _transaction_entry(root, ROLLBACK, uid, gid)
+    if (
+        rollback_entry is not None
+        and (
+            rollback_entry.st_dev,
+            rollback_entry.st_ino,
+        )
+        != old_identity
+    ):
+        raise UnifiOperationError("rollback identity changed during normalization")
+    stage_entry = _transaction_entry(root, STAGE, uid, gid)
+    if (
+        stage_entry is not None
+        and stage_identity is not None
+        and (stage_entry.st_dev, stage_entry.st_ino) != stage_identity
+    ):
+        raise UnifiOperationError("stage identity changed during normalization")
+
+    if journal["phase"] not in {"recovered_old", "recovery_required"}:
+        if progress == progress_initial and (
+            stage_entry is not None or rollback_entry is not None
+        ):
+            raise UnifiOperationError("unexpected early transaction artifacts")
+        if progress == progress_staging and rollback_entry is not None:
+            raise UnifiOperationError("unexpected staging rollback")
+    if (
+        journal["phase"]
+        in {
+            "committed",
+            "canonical_verified",
+            "service_resumed_pending_live_verification",
+            "live_verified",
+        }
+        and stage_entry is not None
+    ):
+        raise UnifiOperationError("unexpected committed stage")
+    # The copy is created before its inode is journalled, so either stage
+    # presence is reachable while only the issued identity is durable.
+    if journal["phase"] != "recovered_old" and progress != progress_staging:
+        stage_required = progress in {progress_staged, progress_rollback} or (
+            progress == progress_committable and canonical_identity == old_identity
+        )
+        if stage_required != (stage_entry is not None):
+            raise UnifiOperationError("inconsistent transaction stage")
+    rollback_required = journal["phase"] in {
+        "rollback_durable",
+        "commit_possible",
+        "committed",
+        "canonical_verified",
+        "service_resumed_pending_live_verification",
+    } or (
+        journal["phase"] == "recovery_required"
+        and progress in {progress_rollback, progress_committable}
+    )
+    if rollback_required and rollback_entry is None:
+        raise UnifiOperationError("required transaction rollback missing")
+    if (
+        rollback_entry is not None
+        and progress in {progress_initial, progress_staging}
+        and journal["phase"] not in {"recovered_old"}
+    ):
+        raise UnifiOperationError("unexpected transaction rollback")
+
+
 def secure_after_linuxserver_init():
-    """Restore fixed admin-file ownership changed by LinuxServer's recursive chown."""
+    """Normalize only proved executor admin files after an interrupted chown."""
     uid, gid = _local_identity()
     root = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-    lock = None
+    descriptors = {}
+    admin_entries = {}
     try:
         for part in ("config", "data"):
             opened = os.open(
@@ -452,54 +704,78 @@ def secure_after_linuxserver_init():
                 )
 
         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
-        try:
-            os.stat(LOCK, dir_fd=root, follow_symlinks=False)
-        except FileNotFoundError:
-            lock = os.open(LOCK, flags | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=root)
-            os.fchmod(lock, 0o600)
+        if not _path_exists(root, LOCK):
+            if any(
+                _path_exists(root, name)
+                for name in (JOURNAL, JOURNAL_NEW, STAGE, ROLLBACK)
+            ):
+                raise UnifiOperationError("transaction state exists without lock")
+            descriptor = os.open(
+                LOCK, flags | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=root
+            )
+            descriptors[LOCK] = descriptor
+            os.fchmod(descriptor, 0o600)
         else:
-            lock = os.open(LOCK, flags, dir_fd=root)
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            descriptor = os.open(LOCK, flags, dir_fd=root)
+            descriptors[LOCK] = descriptor
+        admin_entries[LOCK] = _admin_entry(root, LOCK, descriptor, uid, gid)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
-        for name in (LOCK, JOURNAL, JOURNAL_NEW):
+        for name in (JOURNAL, JOURNAL_NEW):
             try:
-                before = os.stat(name, dir_fd=root, follow_symlinks=False)
+                descriptor = os.open(name, flags, dir_fd=root)
             except FileNotFoundError:
                 continue
-            maximum = 0 if name == LOCK else MAX_JOURNAL
+            descriptors[name] = descriptor
+            admin_entries[name] = _admin_entry(root, name, descriptor, uid, gid)
+
+        repair = [
+            name
+            for name, entry in admin_entries.items()
+            if (entry.st_uid, entry.st_gid) == (uid, gid)
+        ]
+        if repair and JOURNAL_NEW in descriptors and JOURNAL not in descriptors:
+            raise UnifiOperationError("temporary journal has no durable authority")
+        if repair and JOURNAL in descriptors:
+            data = os.read(descriptors[JOURNAL], MAX_JOURNAL + 1)
+            if len(data) > MAX_JOURNAL:
+                raise UnifiOperationError("recovery journal exceeds limit")
+            journal = json.loads(data.decode("ascii"), object_pairs_hook=_object)
+            _validate_normalization_transaction(root, journal, uid, gid)
+
+        # All names and transaction identity were proved before the first chown.
+        # A crash between these fixed operations is restart-safe because mixed
+        # root/abc ownership is accepted and revalidated on the next boot.
+        identities = {
+            name: (entry.st_dev, entry.st_ino) for name, entry in admin_entries.items()
+        }
+        for name in repair:
+            descriptor = descriptors[name]
+            before = os.fstat(descriptor)
+            if (before.st_dev, before.st_ino) != identities[name]:
+                raise UnifiOperationError(
+                    "executor state changed before ownership normalization"
+                )
+            os.fchown(descriptor, 0, 0)
+            os.fchmod(descriptor, 0o600)
+            os.fsync(descriptor)
+        for name, identity in identities.items():
+            current = os.stat(name, dir_fd=root, follow_symlinks=False)
             if (
-                not stat.S_ISREG(before.st_mode)
-                or stat.S_IMODE(before.st_mode) != 0o600
-                or (before.st_uid, before.st_gid) not in {(0, 0), (uid, gid)}
-                or before.st_dev != os.fstat(root).st_dev
-                or not 0 <= before.st_size <= maximum
-                or before.st_nlink != 1
+                (current.st_dev, current.st_ino) != identity
+                or not stat.S_ISREG(current.st_mode)
+                or stat.S_IMODE(current.st_mode) != 0o600
+                or current.st_nlink != 1
             ):
-                raise UnifiOperationError("unsafe executor state after initialization")
-            descriptor = lock if name == LOCK else os.open(name, flags, dir_fd=root)
-            try:
-                opened = os.fstat(descriptor)
-                if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
-                    raise UnifiOperationError(
-                        "executor state changed after initialization"
-                    )
-                os.fchown(descriptor, 0, 0)
-                os.fchmod(descriptor, 0o600)
-                os.fsync(descriptor)
-                current = os.stat(name, dir_fd=root, follow_symlinks=False)
-                if (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
-                    raise UnifiOperationError(
-                        "executor state changed after initialization"
-                    )
-            finally:
-                if descriptor != lock:
-                    os.close(descriptor)
+                raise UnifiOperationError(
+                    "executor state changed during ownership normalization"
+                )
         os.fsync(root)
     except Exception:
         raise UnifiOperationError("executor state normalization failed") from None
     finally:
-        if lock is not None:
-            os.close(lock)
+        for descriptor in descriptors.values():
+            os.close(descriptor)
         os.close(root)
     return "executor_state_secured"
 
@@ -531,15 +807,7 @@ class SocketUnifiExecutionBoundary:
                 raise ValueError
             _write_message(connection, request)
             response = _read_message(connection)
-            response = _exact_dict(
-                response,
-                {"version", "ok", "result"}
-                if response.get("ok") is True
-                else {"version", "ok", "error"},
-            )
-            if response["version"] != PROTOCOL_VERSION or response["ok"] is not True:
-                raise ValueError
-            return response["result"]
+            return _decode_response(response)
         except Exception:
             raise UnifiOperationError("UniFi executor request failed") from None
         finally:
@@ -608,7 +876,6 @@ def main(argv=None):
             outcome = recover_startup()
             print(f"unifi-cert-renewer startup recovery: {outcome}")
         elif arguments == ["secure-after-init"]:
-            secure_after_linuxserver_init()
             outcome = recover_startup()
             print(
                 "unifi-cert-renewer executor state secured after LinuxServer init; "

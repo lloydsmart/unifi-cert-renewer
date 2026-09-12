@@ -255,12 +255,14 @@ for the stage and committed canonical file. Prepared plans contain public result
 not executable argv or authorization. One directly issuing self-signed CA is
 currently supported. Neither preparation nor keystore import completes renewal.
 
-Production mutation has no runtime enable flag or unsafe bypass. It is reachable
-only through the reviewed fixed Unix-socket protocol inside the UniFi key-owning
-environment. The server accepts five semantic operations: public inspection,
-CSR generation, guarded installation, recovery, and exact-pending-leaf
-finalisation. It accepts no command, executable, argv, alias, service name,
-pathname, Python function, or Boolean success assertion. See
+Production mutation has no runtime enable flag or unsafe bypass. The reviewed
+fixed Unix-socket protocol is the supported renewer-to-executor cross-boundary
+interface. Trusted local root also invokes recovery during startup and can
+instantiate the executor within the existing host-root trust model. The server
+accepts five semantic operations: public inspection, CSR generation, guarded
+installation, recovery, and exact-pending-leaf finalisation. It accepts no
+command, executable, argv, alias, service name, pathname, Python function, or
+Boolean success assertion. See
 [executor and recovery](docs/unifi-executor.md).
 
 The socket directory is a root-owned `0750` bind mount at
@@ -269,8 +271,15 @@ directory's dedicated deployment group, and mode `0660`. Kernel Unix-socket and
 directory permissions authorize only processes in that group. The server and
 client both fail closed if owner, group, type, mode, or socket identity is unsafe.
 The protocol is local-only, versioned, strictly shaped, length-prefixed and
-bounded. Failures return one fixed error and never reflect diagnostics or input.
-Host root remains the trusted administrator that assigns the deployment group.
+bounded. One absolute monotonic deadline covers the complete request frame, so
+byte trickling cannot retain the single executor indefinitely. A disconnected
+client does not cancel an operation that has begun, and response transport
+failure is contained to that connection. Failures return one fixed error and
+never reflect diagnostics or input. Host root remains the trusted administrator
+that assigns the deployment group. A root-created socket interrupted between
+bind and final publication is recognized only by its fixed type, mode, owner,
+group, link count, device, directory, and listener lock; other entries fail
+closed and are not removed.
 
 Writer exclusion covers UniFi through s6 quiescence and actual Java process
 inspection, project-controlled renewers through an inherited exclusive lock,
@@ -279,14 +288,20 @@ administrative boundary: the executor cannot prevent a privileged administrator
 from bypassing locks, modifying mounts/appdata, or killing the helper. Fresh
 file identity and public-state checks detect observable unexpected changes;
 they do not claim exclusion of malicious host root. The supplied s6 recovery
-oneshot is ordered before LinuxServer's UniFi configuration init. It uses the
-same executor lock and leaves Java down while deciding and completing startup
-recovery. A second fixed oneshot runs after LinuxServer's recursive ownership
-normalization, safely restores only root-owned executor lock/journal files, and
-repeats recovery inspection. The UniFi Java and executor socket longruns depend
-on both steps. A corrupt,
-ambiguous, unsupported, identity-mismatched, symlinked, or otherwise unsafe state
-fails closed, so Java cannot race recovery or changed transaction evidence.
+oneshot is ordered before LinuxServer's UniFi configuration init. Before strict
+recovery, it repairs only the exact root/`abc`-owned executor lock/journal files
+that an interrupted LinuxServer recursive ownership pass can leave behind. It
+validates fixed names, directory, no-follow opens, type, mode, size, links,
+journal structure, reachable phase/flag/artifact combinations, and recorded
+transaction inode relationships while holding the pre-existing executor lock.
+It never creates a replacement lock beside transaction evidence. Mixed
+ownership from an interrupted repair is safe to retry.
+The oneshot leaves Java down while deciding and completing startup recovery. A
+second fixed oneshot repeats this normalization and recovery inspection after
+LinuxServer initialization. The UniFi Java and executor socket longruns depend
+on both steps. A corrupt, ambiguous, unsupported, identity-mismatched, symlinked,
+or otherwise unsafe state fails closed, so Java cannot race recovery or changed
+transaction evidence.
 
 A public-only durable journal records service-down intent before stopping UniFi
 and blocks another transaction. Explicit recovery obtains exclusion, checks for

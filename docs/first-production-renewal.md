@@ -6,7 +6,9 @@
 2. Confirm `.cert-renewer-journal`, `.cert-renewer-journal-new`,
    `.cert-renewer-stage`, and `.cert-renewer-rollback` are absent from
    `/config/data`. Preserve the normal protected appdata backup/recovery reference.
-3. Restart the derivative UniFi container under supervision. Confirm the recovery
+3. Record the tested derivative image's registry digest and confirm the UniFi
+   deployment references that exact digest, not a mutable tag. Restart the
+   derivative UniFi container under supervision. Confirm the recovery
    oneshot reports `no_active_transaction`, the post-init ownership hook succeeds,
    Java becomes ready afterward, and
    `/run/unifi-cert-renewer/executor.sock` is `root:<dedicated-group>` mode `0660`

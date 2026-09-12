@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 import struct
 from contextlib import contextmanager
 from pathlib import Path
@@ -178,10 +179,7 @@ def _round_trip(handler, payload):
             self.outgoing = bytearray()
 
         def settimeout(self, timeout):
-            assert timeout in {
-                service.REQUEST_READ_TIMEOUT_SECONDS,
-                service.SOCKET_TIMEOUT_SECONDS,
-            }
+            assert 0 < timeout <= service.SOCKET_TIMEOUT_SECONDS
 
         def recv(self, length):
             result = self.incoming[:length]
@@ -194,6 +192,143 @@ def _round_trip(handler, payload):
     connection = MemoryConnection(payload)
     handler.handle(connection)
     return service._read_message(MemoryConnection(connection.outgoing))
+
+
+class Connection:
+    def __init__(self, incoming, *, chunk_size=None, send_error=None):
+        self.incoming = bytearray(incoming)
+        self.chunk_size = chunk_size
+        self.send_error = send_error
+        self.outgoing = bytearray()
+        self.closed = False
+        self.timeouts = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.closed = True
+
+    def settimeout(self, timeout):
+        self.timeouts.append(timeout)
+
+    def recv(self, length):
+        if self.chunk_size is not None:
+            length = min(length, self.chunk_size)
+        result = self.incoming[:length]
+        del self.incoming[:length]
+        return bytes(result)
+
+    def sendall(self, data):
+        if self.send_error is not None:
+            raise self.send_error
+        self.outgoing.extend(data)
+
+
+def framed(request):
+    data = json.dumps(request).encode("ascii")
+    return struct.pack("!I", len(data)) + data
+
+
+def test_absolute_request_deadline_stops_trickle_and_next_client_succeeds(
+    protocol, monkeypatch
+):
+    _, handler = protocol
+
+    class Clock:
+        value = 0.0
+
+        def __call__(self):
+            self.value += 0.9
+            return self.value
+
+    monkeypatch.setattr(service, "REQUEST_READ_TIMEOUT_SECONDS", 3.0)
+    monkeypatch.setattr(service, "_monotonic", Clock())
+    slow = Connection(framed(service._request("inspect", {})), chunk_size=1)
+    service._serve_client(handler, slow)
+    assert slow.closed
+    assert len(slow.incoming) > 0
+    assert slow.timeouts == sorted(slow.timeouts, reverse=True)
+
+    monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
+    valid = Connection(framed(service._request("inspect", {})))
+    service._serve_client(handler, valid)
+    assert valid.closed
+    response = service._read_message(Connection(valid.outgoing), deadline=1.0)
+    assert response["ok"] is True
+
+
+def test_maximum_sized_valid_frame_is_accepted(monkeypatch):
+    monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
+    body = json.dumps(service._request("inspect", {})).encode("ascii")
+    body += b" " * (service.MAX_MESSAGE_BYTES - len(body))
+    connection = Connection(struct.pack("!I", len(body)) + body)
+    message = service._read_message(connection, deadline=1.0)
+    assert service._decode_envelope(message) == ("inspect", {})
+
+
+def test_disconnect_before_complete_request_is_contained_and_connection_closes(
+    protocol, monkeypatch
+):
+    _, handler = protocol
+    monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
+    disconnected = Connection(
+        struct.pack("!I", 50) + b"{", send_error=BrokenPipeError()
+    )
+    service._serve_client(handler, disconnected)
+    assert disconnected.closed
+
+    valid = Connection(framed(service._request("inspect", {})))
+    service._serve_client(handler, valid)
+    assert service._read_message(Connection(valid.outgoing), deadline=1.0)["ok"] is True
+
+
+@pytest.mark.parametrize(
+    "failure", [BrokenPipeError(), ConnectionResetError(), service.socket.timeout()]
+)
+def test_response_transport_failures_are_connection_local(
+    protocol, monkeypatch, failure
+):
+    _, handler = protocol
+    monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
+    disconnected = Connection(
+        framed(service._request("inspect", {})), send_error=failure
+    )
+    service._serve_client(handler, disconnected)
+    assert disconnected.closed
+
+    valid = Connection(framed(service._request("inspect", {})))
+    service._serve_client(handler, valid)
+    assert service._read_message(Connection(valid.outgoing), deadline=1.0)["ok"] is True
+
+
+@pytest.mark.parametrize("operation", ["inspect", "install", "recover", "finalize"])
+def test_disconnect_after_operation_does_not_cancel_it_or_stop_server(
+    protocol, monkeypatch, operation
+):
+    executor, handler = protocol
+    monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
+    arguments = {
+        "inspect": {},
+        "install": {"request": service._encode_import_request(executor.request)},
+        "recover": {},
+        "finalize": {
+            "expected_leaf_der": service._encode_binary(
+                executor.plan.certificate_chain_der[0]
+            )
+        },
+    }[operation]
+    disconnected = Connection(
+        framed(service._request(operation, arguments)), send_error=BrokenPipeError()
+    )
+    service._serve_client(handler, disconnected)
+    assert disconnected.closed
+    expected_event = "install" if operation == "install" else operation
+    assert expected_event in executor.events
+
+    valid = Connection(framed(service._request("inspect", {})))
+    service._serve_client(handler, valid)
+    assert service._read_message(Connection(valid.outgoing), deadline=1.0)["ok"] is True
 
 
 def test_malformed_and_oversized_messages_get_bounded_generic_error(protocol):
@@ -218,6 +353,14 @@ def test_protocol_version_type_is_strict(protocol):
     _, handler = protocol
     with pytest.raises(ValueError):
         handler.dispatch({"version": True, "operation": "inspect", "arguments": {}})
+
+
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_response_protocol_version_type_is_strict(version):
+    with pytest.raises(ValueError):
+        service._decode_response(
+            {"version": version, "ok": True, "result": {"state": {}}}
+        )
 
 
 def test_executor_failure_does_not_return_private_state_or_diagnostics(
@@ -256,8 +399,11 @@ def test_startup_entrypoint_uses_non_resuming_recovery(monkeypatch):
 
     monkeypatch.setattr(service, "ProductionUnifiExecutor", StartupExecutor)
     monkeypatch.setattr(service, "_startup_data_directory_absent", lambda: False)
+    monkeypatch.setattr(
+        service, "secure_after_linuxserver_init", lambda: calls.append("secure")
+    )
     assert service.recover_startup() == "no_active_transaction"
-    assert calls == [True]
+    assert calls == ["secure", True]
 
 
 def test_new_empty_config_is_left_for_linuxserver_initialization(monkeypatch):
@@ -275,15 +421,12 @@ def test_new_empty_config_is_left_for_linuxserver_initialization(monkeypatch):
 def test_post_init_entrypoint_rechecks_recovery_before_success(monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(
-        service, "secure_after_linuxserver_init", lambda: calls.append("secure")
-    )
-    monkeypatch.setattr(
         service,
         "recover_startup",
-        lambda: calls.append("recover") or "no_active_transaction",
+        lambda: calls.append("secure-and-recover") or "no_active_transaction",
     )
     assert service.main(["secure-after-init"]) == 0
-    assert calls == ["secure", "recover"]
+    assert calls == ["secure-and-recover"]
     assert "recovery recheck: no_active_transaction" in capsys.readouterr().out
 
 
@@ -338,10 +481,9 @@ def test_s6_dependency_graph_orders_recovery_before_init_and_java():
 def test_post_init_hook_resecures_only_fixed_admin_files(tmp_path, monkeypatch):
     root = tmp_path / "config/data"
     root.mkdir(parents=True, mode=0o700)
-    for name, content in ((service.LOCK, b""), (service.JOURNAL, b"{}")):
-        path = root / name
-        path.write_bytes(content)
-        path.chmod(0o600)
+    path = root / service.LOCK
+    path.write_bytes(b"")
+    path.chmod(0o600)
 
     original_open = os.open
 
@@ -357,11 +499,186 @@ def test_post_init_hook_resecures_only_fixed_admin_files(tmp_path, monkeypatch):
         service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
     )
     assert service.secure_after_linuxserver_init() == "executor_state_secured"
-    assert ownership == [(0, 0), (0, 0)]
-    assert sorted(path.name for path in root.iterdir()) == [
-        service.JOURNAL,
-        service.LOCK,
-    ]
+    assert ownership == [(0, 0)]
+    assert [item.name for item in root.iterdir()] == [service.LOCK]
+
+
+def pending_normalization_state(root):
+    canonical = root / service.CANONICAL
+    canonical.write_bytes(b"public-test-keystore-placeholder")
+    canonical.chmod(0o600)
+    identity = canonical.stat()
+    journal = {
+        "version": 1,
+        "transaction": "a" * 32,
+        "phase": "quiescing",
+        "resume": True,
+        "old": {"spki": "b" * 64, "chain": ["c" * 64]},
+        "issued": None,
+        "old_inode": [identity.st_dev, identity.st_ino],
+        "stage_inode": None,
+        "rollback_expected": False,
+        "commit_possible": False,
+    }
+    for name, content in (
+        (service.LOCK, b""),
+        (service.JOURNAL, json.dumps(journal).encode("ascii")),
+    ):
+        path = root / name
+        path.write_bytes(content)
+        path.chmod(0o600)
+
+
+def anchor_test_config(monkeypatch, tmp_path):
+    original_open = os.open
+    monkeypatch.setattr(
+        service.os,
+        "open",
+        lambda path, flags, *args, **kwargs: original_open(
+            str(tmp_path) if path == "/" else path, flags, *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(service, "_local_identity", lambda: (os.getuid(), os.getgid()))
+
+
+def test_pre_recovery_normalization_accepts_valid_pending_transaction(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    anchor_test_config(monkeypatch, tmp_path)
+    restored = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: restored.append((uid, gid))
+    )
+    assert service.secure_after_linuxserver_init() == "executor_state_secured"
+    assert restored == [(0, 0), (0, 0)]
+
+
+def test_interrupted_admin_file_restoration_converges_on_next_boot(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    anchor_test_config(monkeypatch, tmp_path)
+    calls = 0
+
+    def interrupted(fd, uid, gid):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated container stop between fixed files")
+
+    monkeypatch.setattr(service.os, "fchown", interrupted)
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+    restored = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: restored.append((uid, gid))
+    )
+    assert service.secure_after_linuxserver_init() == "executor_state_secured"
+    assert restored == [(0, 0), (0, 0)]
+
+
+def test_replaced_admin_file_during_restoration_fails_closed(tmp_path, monkeypatch):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    anchor_test_config(monkeypatch, tmp_path)
+    calls = 0
+
+    def replace_journal(fd, uid, gid):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            replacement = root / "replacement"
+            replacement.write_bytes((root / service.JOURNAL).read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, root / service.JOURNAL)
+
+    monkeypatch.setattr(service.os, "fchown", replace_journal)
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+
+def test_mismatched_pending_inode_is_rejected_before_any_ownership_change(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    journal_path = root / service.JOURNAL
+    journal = json.loads(journal_path.read_text(encoding="ascii"))
+    journal["old_inode"][1] += 1
+    journal_path.write_text(json.dumps(journal), encoding="ascii")
+    journal_path.chmod(0o600)
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert ownership == []
+
+
+def test_transaction_without_persistent_lock_is_rejected_without_mutation(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    (root / service.LOCK).unlink()
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+    assert ownership == []
+    assert not (root / service.LOCK).exists()
+    assert (root / service.JOURNAL).exists()
+
+
+def test_phase_impossible_transaction_is_rejected_before_ownership_change(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    stage = root / service.STAGE
+    stage.write_bytes(b"public-test-staged-keystore-placeholder")
+    stage.chmod(0o600)
+    os.link(root / service.CANONICAL, root / service.ROLLBACK)
+    journal_path = root / service.JOURNAL
+    journal = json.loads(journal_path.read_text(encoding="ascii"))
+    journal.update(
+        {
+            "phase": "quiescing",
+            "issued": {"spki": "d" * 64, "chain": ["e" * 64]},
+            "stage_inode": [stage.stat().st_dev, stage.stat().st_ino],
+            "rollback_expected": True,
+            "commit_possible": True,
+        }
+    )
+    journal_path.write_text(json.dumps(journal), encoding="ascii")
+    journal_path.chmod(0o600)
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+    assert ownership == []
 
 
 def test_post_init_hook_rejects_symlinked_admin_state(tmp_path, monkeypatch):
@@ -406,6 +723,91 @@ def test_fifo_socket_lock_is_rejected_without_blocking(tmp_path):
             service._open_socket_lock(directory)
     finally:
         os.close(directory)
+
+
+@pytest.mark.parametrize(
+    ("stage", "group"),
+    [("after-bind", 0), ("after-chown", 991), ("after-chmod", 991)],
+)
+def test_recognizable_interrupted_socket_publication_is_restart_safe(
+    monkeypatch, stage, group
+):
+    directory = SimpleNamespace(st_dev=7, st_gid=991)
+    stale = SimpleNamespace(
+        st_mode=stat.S_IFSOCK | 0o660,
+        st_uid=0,
+        st_gid=group,
+        st_nlink=1,
+        st_dev=7,
+    )
+    exists = True
+    removed = []
+
+    def socket_status(*args, **kwargs):
+        if exists:
+            return stale
+        raise FileNotFoundError
+
+    def unlink(name, **kwargs):
+        nonlocal exists
+        assert name == "executor.sock"
+        exists = False
+        removed.append(stage)
+
+    monkeypatch.setattr(service.os, "stat", socket_status)
+    monkeypatch.setattr(service.os, "unlink", unlink)
+    service._remove_stale_socket(3, directory)
+    service._remove_stale_socket(3, directory)
+    assert removed == [stage]
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o660,
+            st_uid=0,
+            st_gid=991,
+            st_nlink=1,
+            st_dev=7,
+        ),
+        SimpleNamespace(
+            st_mode=stat.S_IFLNK | 0o660,
+            st_uid=0,
+            st_gid=991,
+            st_nlink=1,
+            st_dev=7,
+        ),
+        SimpleNamespace(
+            st_mode=stat.S_IFSOCK | 0o660,
+            st_uid=1000,
+            st_gid=991,
+            st_nlink=1,
+            st_dev=7,
+        ),
+        SimpleNamespace(
+            st_mode=stat.S_IFSOCK | 0o666,
+            st_uid=0,
+            st_gid=991,
+            st_nlink=1,
+            st_dev=7,
+        ),
+        SimpleNamespace(
+            st_mode=stat.S_IFSOCK | 0o660,
+            st_uid=0,
+            st_gid=992,
+            st_nlink=1,
+            st_dev=7,
+        ),
+    ],
+)
+def test_unsafe_socket_replacement_is_rejected_without_unlink(monkeypatch, unsafe):
+    removed = []
+    monkeypatch.setattr(service.os, "stat", lambda *args, **kwargs: unsafe)
+    monkeypatch.setattr(service.os, "unlink", lambda *args, **kwargs: removed.append(1))
+    with pytest.raises(UnifiOperationError):
+        service._remove_stale_socket(3, SimpleNamespace(st_dev=7, st_gid=991))
+    assert removed == []
 
 
 def stat_mode(mode):

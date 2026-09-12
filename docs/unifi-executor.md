@@ -9,12 +9,16 @@ not a network listener. Protocol version 1 supports exactly `inspect`,
 `generate_csr`, `install`, `recover`, and `finalize`.
 
 Requests are strictly shaped JSON behind a four-byte length prefix and have an
-8 MiB upper bound. Public binary values use validated base64. Unknown/duplicate
-fields, operations, malformed encodings, and oversized messages fail. There is
-no generic dispatch and no request field for a path, alias, service, executable,
-argv, password, transaction ID, Python callable, or success Boolean. Responses
-contain normalized public state, a public CSR, or a fixed outcome. Errors use a
-single bounded diagnostic and never reflect request or child-process data.
+8 MiB upper bound. One absolute monotonic deadline spans header and body reads;
+each socket timeout is capped to its remaining budget. Public binary values use
+validated base64. Unknown/duplicate fields, operations, malformed encodings,
+and oversized messages fail. There is no generic dispatch and no request field
+for a path, alias, service, executable, argv, password, transaction ID, Python
+callable, or success Boolean. Responses contain normalized public state, a
+public CSR, or a fixed outcome. Errors use a single bounded diagnostic and never
+reflect request or child-process data. Disconnects and response write failures
+are connection-local. An operation that has started runs through its executor
+state transition before the server attempts to return its response.
 
 The renewer-side adapter preserves the existing `UnifiClient` interface. For an
 installation, the server performs the complete shared client validation and
@@ -27,7 +31,11 @@ The root-owned socket directory must be exactly mode `0750`; the root-owned
 socket is mode `0660` and uses the directory's group. Only the dedicated group
 assigned by the host operator can traverse the directory and connect. Both ends
 validate these properties and socket identity. Missing or unsafe prerequisites
-fail closed. Host root remains trusted and controls group membership.
+fail closed. Socket bind uses a restrictive publication umask. Under the
+listener lock, restart removes only a root-owned socket with the exact published
+mode, directory device and either the pre-chown root group or final dedicated
+group; wrong-type, wrong-owner, wrong-mode, linked, or replaced entries fail
+closed. Host root remains trusted and controls group membership.
 
 The reviewed baseline requires local root for the narrowly scoped helper, `abc`
 uid/gid `1000:1000`, Linux `/proc`, s6, and `/usr/bin/keytool`. Appdata may use
@@ -192,14 +200,20 @@ directory sync, and no mutation is repeated.
 ## Startup and explicit recovery
 
 A supplied s6 oneshot invokes startup recovery before LinuxServer's UniFi
-configuration init. That init depends on the recovery decision. Because the
-LinuxServer init recursively assigns appdata to `abc`, a second fixed oneshot
-then restores only the root-owned lock/journal entries under the executor lock,
-with fixed-name, type, mode, owner, size, link-count, no-follow, inode, fsync, and
-directory-fsync checks, then repeats recovery inspection against the post-init
-state. Both Java and the executor socket depend on this second oneshot. The
-startup recovery mode deliberately leaves Java down; s6 starts it only after both
-oneshots succeed.
+configuration init. That init depends on the recovery decision. Before opening
+the strict executor, the oneshot repairs the exact interrupted-normalization
+case: only fixed lock/journal entries may transition from the expected `abc`
+ownership back to root, under the executor lock, after type, mode, size,
+link-count, no-follow, journal-schema, reachable phase/flag/artifact, and
+recorded transaction-inode checks. Transaction evidence without the persistent
+lock is never repaired by creating a replacement lock. All entries are proved
+before the first ownership change. A crash between fixed files leaves a
+root/`abc` mixture that the next boot revalidates and completes.
+Because LinuxServer init recursively assigns appdata to `abc`, a second fixed
+oneshot repeats the same normalization and recovery inspection against the
+post-init state. Both Java and the executor socket depend on this second
+oneshot. The startup recovery mode deliberately leaves Java down; s6 starts it
+only after both oneshots succeed.
 
 Absence of recovery state permits normal startup. Known old or issued state is
 recovered using the existing state machine. Corrupt, ambiguous, unsupported, or
