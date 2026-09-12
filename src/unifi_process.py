@@ -5,6 +5,7 @@ The inherited flock descriptor keeps recovery excluded if the parent dies.
 """
 
 import contextlib
+import errno
 import os
 import selectors
 import signal
@@ -17,6 +18,43 @@ from unifi_client import UnifiOperationError
 MAX_IO = 1024 * 1024
 TIMEOUT = 30.0
 SERVICE = "/run/service/svc-unifi-network-application"
+ABC_UID = 1000
+ABC_GID = 1000
+PROCESS_INSPECTION_TIMEOUT = 2.0
+MAX_PROCESS_STATUS = 16 * 1024
+_PROCESS_RESULTS = {
+    b"N": (False, False),
+    b"U": (True, False),
+    b"K": (False, True),
+    b"B": (True, True),
+}
+
+
+class _ProcessDisappeared(Exception):
+    """The anchored target process exited during proc inspection."""
+
+
+def _target_error(error: OSError) -> None:
+    if error.errno in {errno.ENOENT, errno.ESRCH}:
+        raise _ProcessDisappeared from None
+    raise error
+
+
+def _open_process(process: Path) -> int:
+    try:
+        return os.open(
+            process,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+    except OSError as error:
+        _target_error(error)
+
+
+def _target_fstat(process_fd: int):
+    try:
+        return os.fstat(process_fd)
+    except OSError as error:
+        _target_error(error)
 
 
 def _reap(child: subprocess.Popen) -> None:
@@ -99,17 +137,39 @@ def _run(argv: tuple[str, ...], data: bytes, env: dict[str, str], lock: int) -> 
                 stream.close()
 
 
-def _inspect_process(process: Path) -> tuple[bool, bool]:
-    """Identify a single real Java/ace.jar or keytool process from /proc data."""
+def _read_at(process_fd: int, name: str, maximum: int) -> bytes:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        fd = os.open(name, flags, dir_fd=process_fd)
+    except OSError as error:
+        _target_error(error)
+    try:
+        result = bytearray()
+        while len(result) <= maximum:
+            try:
+                chunk = os.read(fd, min(4096, maximum + 1 - len(result)))
+            except OSError as error:
+                _target_error(error)
+            if not chunk:
+                return bytes(result)
+            result.extend(chunk)
+        raise UnifiOperationError("process data exceeds inspection limit")
+    finally:
+        os.close(fd)
+
+
+def _inspect_process_fd(process_fd: int) -> tuple[bool, bool]:
+    """Identify one real Java/ace.jar or keytool process from an anchored fd."""
     # Linux retains the executable inode for a running process after package
     # replacement/unlink and annotates its proc symlink target.
-    executable = Path(os.readlink(process / "exe").removesuffix(" (deleted)")).name
+    try:
+        target = os.readlink("exe", dir_fd=process_fd)
+    except OSError as error:
+        _target_error(error)
+    executable = Path(target.removesuffix(" (deleted)")).name
     if executable not in {"java", "keytool"}:
         return False, False
-    with (process / "cmdline").open("rb") as stream:
-        command = stream.read(65537)
-    if len(command) > 65536:
-        raise UnifiOperationError("process command exceeds inspection limit")
+    command = _read_at(process_fd, "cmdline", 65536)
     args = command.split(b"\0")
     keytool = executable == "keytool" or b"sun.security.tools.keytool.Main" in args
     unifi = executable == "java" and any(
@@ -117,6 +177,153 @@ def _inspect_process(process: Path) -> tuple[bool, bool]:
         for index in range(len(args))
     )
     return unifi, keytool
+
+
+def _inspect_process(process: Path) -> tuple[bool, bool]:
+    """Identify a process while anchoring all reads to its proc directory."""
+    fd = _open_process(process)
+    try:
+        return _inspect_process_fd(fd)
+    finally:
+        os.close(fd)
+
+
+def _abc_process_identity(process_fd: int) -> tuple[int, int, int, int]:
+    """Prove an anchored process has the complete fixed LinuxServer identity."""
+    before = _target_fstat(process_fd)
+    if (before.st_uid, before.st_gid) != (ABC_UID, ABC_GID):
+        raise UnifiOperationError("cannot establish process exclusion")
+    status = _read_at(process_fd, "status", MAX_PROCESS_STATUS)
+    fields = {}
+    for line in status.splitlines():
+        name, separator, value = line.partition(b":")
+        if separator and name in {b"Uid", b"Gid"}:
+            if name in fields:
+                raise UnifiOperationError("cannot establish process exclusion")
+            try:
+                fields[name] = tuple(int(item) for item in value.split())
+            except ValueError:
+                raise UnifiOperationError(
+                    "cannot establish process exclusion"
+                ) from None
+    if fields != {b"Uid": (ABC_UID,) * 4, b"Gid": (ABC_GID,) * 4}:
+        raise UnifiOperationError("cannot establish process exclusion")
+    after = _target_fstat(process_fd)
+    identity = (before.st_dev, before.st_ino, before.st_uid, before.st_gid)
+    if identity != (after.st_dev, after.st_ino, after.st_uid, after.st_gid):
+        raise UnifiOperationError("cannot establish process exclusion")
+    return identity
+
+
+def _close_child_fds(process_fd: int, result_fd: int) -> None:
+    """Leave the inspection child only its anchored proc fd and result pipe."""
+    retained = {process_fd, result_fd}
+    for name in os.listdir("/proc/self/fd"):
+        fd = int(name)
+        if fd not in retained:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+def _drop_inspection_identity() -> None:
+    os.setgroups([])
+    os.setresgid(ABC_GID, ABC_GID, ABC_GID)
+    os.setresuid(ABC_UID, ABC_UID, ABC_UID)
+    if (
+        os.getgroups()
+        or os.getresgid() != (ABC_GID,) * 3
+        or os.getresuid() != (ABC_UID,) * 3
+    ):
+        raise OSError
+
+
+def _child_inspection(process_fd: int, result_fd: int) -> None:
+    """Drop permanently to abc, inspect one anchored process, and exit."""
+    result = b"E"
+    try:
+        _close_child_fds(process_fd, result_fd)
+        _drop_inspection_identity()
+        found = _inspect_process_fd(process_fd)
+        result = {value: key for key, value in _PROCESS_RESULTS.items()}[found]
+    except _ProcessDisappeared:
+        result = b"D"
+    except BaseException:
+        pass
+    with contextlib.suppress(OSError):
+        os.write(result_fd, result)
+    os._exit(0)
+
+
+def _kill_and_reap(pid: int) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGKILL)
+    while True:
+        try:
+            os.waitpid(pid, 0)
+            return
+        except InterruptedError:
+            continue
+        except ChildProcessError:
+            return
+
+
+def _receive_child(pid: int, result_fd: int) -> tuple[bool, bool]:
+    deadline = time.monotonic() + PROCESS_INSPECTION_TIMEOUT
+    output = bytearray()
+    status = None
+    eof = False
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(result_fd, selectors.EVENT_READ)
+            while status is None or not eof:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise UnifiOperationError("cannot establish process exclusion")
+                if not eof:
+                    for _key, _events in selector.select(min(remaining, 0.05)):
+                        chunk = os.read(result_fd, 2)
+                        if chunk:
+                            output.extend(chunk)
+                            if len(output) > 1:
+                                raise UnifiOperationError(
+                                    "cannot establish process exclusion"
+                                )
+                        else:
+                            selector.unregister(result_fd)
+                            eof = True
+                if status is None:
+                    waited, child_status = os.waitpid(pid, os.WNOHANG)
+                    if waited:
+                        status = child_status
+        if os.waitstatus_to_exitcode(status) != 0 or len(output) != 1:
+            raise UnifiOperationError("cannot establish process exclusion")
+        if bytes(output) == b"D":
+            raise _ProcessDisappeared
+        try:
+            return _PROCESS_RESULTS[bytes(output)]
+        except KeyError:
+            raise UnifiOperationError("cannot establish process exclusion") from None
+    finally:
+        os.close(result_fd)
+        if status is None:
+            _kill_and_reap(pid)
+
+
+def _inspect_as_abc(process_fd: int) -> tuple[bool, bool]:
+    """Inspect only one internally selected process as fixed uid/gid 1000."""
+    read_fd, write_fd = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        pid = os.fork()
+    except BaseException:
+        os.close(read_fd)
+        os.close(write_fd)
+        raise
+    if pid == 0:
+        os.close(read_fd)
+        _child_inspection(process_fd, write_fd)
+        os._exit(1)
+    os.close(write_fd)
+    return _receive_child(pid, read_fd)
 
 
 def _processes() -> tuple[bool, bool]:
@@ -129,14 +336,36 @@ def _processes() -> tuple[bool, bool]:
     for process in Path("/proc").iterdir():
         if not process.name.isdecimal():
             continue
+        process_fd = None
         try:
-            found_unifi, found_keytool = _inspect_process(process)
+            process_fd = _open_process(process)
+            try:
+                found_unifi, found_keytool = _inspect_process_fd(process_fd)
+            except PermissionError:
+                identity = _abc_process_identity(process_fd)
+                try:
+                    found_unifi, found_keytool = _inspect_as_abc(process_fd)
+                except _ProcessDisappeared:
+                    try:
+                        _abc_process_identity(process_fd)
+                    except _ProcessDisappeared:
+                        raise
+                    raise UnifiOperationError(
+                        "cannot establish process exclusion"
+                    ) from None
+                if identity != _abc_process_identity(process_fd):
+                    raise UnifiOperationError(
+                        "cannot establish process exclusion"
+                    ) from None
             unifi |= found_unifi
             keytool |= found_keytool
-        except FileNotFoundError:
+        except _ProcessDisappeared:
             continue
         except OSError:
             raise UnifiOperationError("cannot establish process exclusion") from None
+        finally:
+            if process_fd is not None:
+                os.close(process_fd)
     return unifi, keytool
 
 

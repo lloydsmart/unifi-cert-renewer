@@ -83,7 +83,11 @@ safely.
 The executor's fixed local prerequisites remain Linux `/proc`, root inside the
 UniFi container, `abc` as uid/gid `1000:1000`, `/usr/bin/keytool`, the LinuxServer
 service at `/run/service/svc-unifi-network-application`, and the existing fixed
-`/config/data/keystore` alias `unifi`.
+`/config/data/keystore` alias `unifi`. Root does not need permission to resolve
+`/proc/<abc-pid>/exe`: the executor internally uses a short-lived child fixed to
+the verified `abc` identity for that case. `CAP_SYS_PTRACE` is not required.
+Hosts that prevent this fixed same-UID inspection still fail closed. Executable
+identity and bounded command-line inspection are both required.
 
 ## Renewer configuration
 
@@ -139,12 +143,33 @@ eligibility. No production keystore, production credentials, external network,
 or production appdata was used.
 
 This Docker host denied container root permission to resolve
-`/proc/<abc-java-pid>/exe` after Java started. The executor therefore failed
-closed and retained its lock when a post-start protocol recovery probe attempted
-the documented process-exclusion check. Online executor operations remain a
-supervised test on the intended host, which must provide the complete readable
-process namespace listed above; adding a capability merely to make this
-disposable check pass was not accepted implicitly.
+`/proc/<abc-java-pid>/exe` after Java started. Issue #19 adds fixed same-UID
+inspection for this normal LinuxServer topology without `CAP_SYS_PTRACE`. The
+root executor first proves the anchored process directory and all UID/GID status
+values are `1000:1000`; only then does a short-lived, irreversibly dropped child
+inspect both `exe` and bounded `cmdline`. Other inaccessible identities, failed
+drops, ambiguous identity changes, and hosts that deny same-UID inspection fail
+closed.
+
+After deploying the merged image on Tower, the following read-only preflight
+checks the observed restriction, the same-UID visibility, and the executor's
+complete classification. Replace `unifi` only if the container has a different
+operator-assigned name:
+
+```bash
+docker exec -u 0 unifi sh -c \
+  'pid="$(pgrep -o -f "/usr/lib/unifi/lib/ace.jar start")"; readlink "/proc/$pid/exe"'
+docker exec -u 0 unifi s6-setuidgid abc sh -c \
+  'pid="$(pgrep -o -f "/usr/lib/unifi/lib/ace.jar start")"; readlink "/proc/$pid/exe"'
+docker exec -u 0 unifi env PYTHONPATH=/opt/unifi-cert-renewer/src \
+  /opt/unifi-cert-renewer/venv/bin/python -c \
+  'from unifi_process import _processes; print(_processes())'
+```
+
+On the affected topology the first command reports permission denied, the
+second prints the Java executable target, and the third prints `(True, False)`.
+These commands do not request a CSR, sign, install, restart UniFi, or access
+private-key material.
 
 The pinned Trivy `0.74.0` enforcing scan, using vulnerability databases fetched
 with TLS verification, also failed this final candidate: 31 fixable findings
