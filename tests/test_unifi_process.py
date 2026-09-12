@@ -1,4 +1,5 @@
 import contextlib
+import errno
 import fcntl
 import inspect
 import os
@@ -9,6 +10,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -377,6 +379,112 @@ def test_child_wait_is_bounded_and_child_is_reaped(tmp_path, monkeypatch):
         os.waitpid(reaped[0], os.WNOHANG)
 
 
+def _result_child(result, *, exit_delay=0):
+    read_fd, write_fd = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+    pid = os.fork()
+    if pid == 0:
+        os.close(read_fd)
+        os.write(write_fd, result)
+        os.close(write_fd)
+        time.sleep(exit_delay)
+        os._exit(0)
+    os.close(write_fd)
+    return pid, read_fd
+
+
+def test_receive_drains_eof_after_reaping_exited_child_once():
+    pid, read_fd = _result_child(b"U")
+    deadline = time.monotonic() + 2
+    while True:
+        with open(f"/proc/{pid}/stat", "rb") as status:
+            state = status.read().split()[2]
+        if state == b"Z":
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail("result child did not exit")
+        time.sleep(0.01)
+    assert process._receive_child(pid, read_fd) == (True, False)
+    with pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)
+
+
+def test_receive_drains_eof_before_collecting_child_once():
+    pid, read_fd = _result_child(b"K", exit_delay=0.2)
+    assert process._receive_child(pid, read_fd) == (False, True)
+    with pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)
+
+
+def _terminated_process_fd():
+    child = subprocess.Popen(("/bin/sleep", "20"))
+    process_fd = os.open(
+        f"/proc/{child.pid}", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+    )
+    child.kill()
+    child.wait(timeout=5)
+    return process_fd
+
+
+def test_anchored_direct_process_exit_is_disappearance():
+    process_fd = _terminated_process_fd()
+    try:
+        with pytest.raises(process._ProcessDisappeared):
+            process._inspect_process_fd(process_fd)
+    finally:
+        os.close(process_fd)
+
+
+def test_anchored_same_uid_process_exit_is_disappearance(monkeypatch):
+    process_fd = _terminated_process_fd()
+    monkeypatch.setattr(process, "_drop_inspection_identity", lambda: None)
+    try:
+        with pytest.raises(process._ProcessDisappeared):
+            process._inspect_as_abc(process_fd)
+    finally:
+        os.close(process_fd)
+
+
+@pytest.mark.parametrize("number", [errno.ENOENT, errno.ESRCH])
+def test_only_target_enoent_and_esrch_are_disappearance(number):
+    with pytest.raises(process._ProcessDisappeared):
+        process._target_error(OSError(number, "target unavailable"))
+
+
+def test_malformed_abc_status_remains_fatal(tmp_path, monkeypatch):
+    pid = tmp_path / "123"
+    pid.mkdir()
+    (pid / "status").write_bytes(b"Uid:\tinvalid\nGid:\t1000\t1000\t1000\t1000\n")
+    process_fd = os.open(pid, os.O_RDONLY | os.O_DIRECTORY)
+    identity = SimpleNamespace(st_dev=1, st_ino=2, st_uid=1000, st_gid=1000)
+    monkeypatch.setattr(process, "_target_fstat", lambda _fd: identity)
+    try:
+        with pytest.raises(UnifiOperationError):
+            process._abc_process_identity(process_fd)
+    finally:
+        os.close(process_fd)
+
+
+def test_abc_proc_ownership_mismatch_remains_fatal(monkeypatch):
+    identity = SimpleNamespace(st_dev=1, st_ino=2, st_uid=1001, st_gid=1000)
+    monkeypatch.setattr(process, "_target_fstat", lambda _fd: identity)
+    with pytest.raises(UnifiOperationError):
+        process._abc_process_identity(123)
+
+
+def test_unrelated_proc_oserror_remains_fatal(tmp_path, monkeypatch):
+    (tmp_path / "123").mkdir()
+    monkeypatch.setattr(
+        process, "Path", lambda value: tmp_path if value == "/proc" else Path(value)
+    )
+    monkeypatch.setattr(
+        process,
+        "_inspect_process_fd",
+        lambda _fd: (_ for _ in ()).throw(OSError(errno.EIO, "unrelated")),
+    )
+    with pytest.raises(UnifiOperationError):
+        process._processes()
+
+
 def test_disappearing_process_remains_tolerated(tmp_path, monkeypatch):
     (tmp_path / "123").mkdir()
     monkeypatch.setattr(
@@ -385,7 +493,7 @@ def test_disappearing_process_remains_tolerated(tmp_path, monkeypatch):
     monkeypatch.setattr(
         process,
         "_inspect_process_fd",
-        lambda _fd: (_ for _ in ()).throw(FileNotFoundError()),
+        lambda _fd: (_ for _ in ()).throw(process._ProcessDisappeared()),
     )
     assert process._processes() == (False, False)
 

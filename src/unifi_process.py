@@ -5,6 +5,7 @@ The inherited flock descriptor keeps recovery excluded if the parent dies.
 """
 
 import contextlib
+import errno
 import os
 import selectors
 import signal
@@ -27,6 +28,33 @@ _PROCESS_RESULTS = {
     b"K": (False, True),
     b"B": (True, True),
 }
+
+
+class _ProcessDisappeared(Exception):
+    """The anchored target process exited during proc inspection."""
+
+
+def _target_error(error: OSError) -> None:
+    if error.errno in {errno.ENOENT, errno.ESRCH}:
+        raise _ProcessDisappeared from None
+    raise error
+
+
+def _open_process(process: Path) -> int:
+    try:
+        return os.open(
+            process,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+    except OSError as error:
+        _target_error(error)
+
+
+def _target_fstat(process_fd: int):
+    try:
+        return os.fstat(process_fd)
+    except OSError as error:
+        _target_error(error)
 
 
 def _reap(child: subprocess.Popen) -> None:
@@ -111,11 +139,17 @@ def _run(argv: tuple[str, ...], data: bytes, env: dict[str, str], lock: int) -> 
 
 def _read_at(process_fd: int, name: str, maximum: int) -> bytes:
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-    fd = os.open(name, flags, dir_fd=process_fd)
+    try:
+        fd = os.open(name, flags, dir_fd=process_fd)
+    except OSError as error:
+        _target_error(error)
     try:
         result = bytearray()
         while len(result) <= maximum:
-            chunk = os.read(fd, min(4096, maximum + 1 - len(result)))
+            try:
+                chunk = os.read(fd, min(4096, maximum + 1 - len(result)))
+            except OSError as error:
+                _target_error(error)
             if not chunk:
                 return bytes(result)
             result.extend(chunk)
@@ -128,7 +162,10 @@ def _inspect_process_fd(process_fd: int) -> tuple[bool, bool]:
     """Identify one real Java/ace.jar or keytool process from an anchored fd."""
     # Linux retains the executable inode for a running process after package
     # replacement/unlink and annotates its proc symlink target.
-    target = os.readlink("exe", dir_fd=process_fd)
+    try:
+        target = os.readlink("exe", dir_fd=process_fd)
+    except OSError as error:
+        _target_error(error)
     executable = Path(target.removesuffix(" (deleted)")).name
     if executable not in {"java", "keytool"}:
         return False, False
@@ -144,7 +181,7 @@ def _inspect_process_fd(process_fd: int) -> tuple[bool, bool]:
 
 def _inspect_process(process: Path) -> tuple[bool, bool]:
     """Identify a process while anchoring all reads to its proc directory."""
-    fd = os.open(process, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    fd = _open_process(process)
     try:
         return _inspect_process_fd(fd)
     finally:
@@ -153,7 +190,7 @@ def _inspect_process(process: Path) -> tuple[bool, bool]:
 
 def _abc_process_identity(process_fd: int) -> tuple[int, int, int, int]:
     """Prove an anchored process has the complete fixed LinuxServer identity."""
-    before = os.fstat(process_fd)
+    before = _target_fstat(process_fd)
     if (before.st_uid, before.st_gid) != (ABC_UID, ABC_GID):
         raise UnifiOperationError("cannot establish process exclusion")
     status = _read_at(process_fd, "status", MAX_PROCESS_STATUS)
@@ -171,7 +208,7 @@ def _abc_process_identity(process_fd: int) -> tuple[int, int, int, int]:
                 ) from None
     if fields != {b"Uid": (ABC_UID,) * 4, b"Gid": (ABC_GID,) * 4}:
         raise UnifiOperationError("cannot establish process exclusion")
-    after = os.fstat(process_fd)
+    after = _target_fstat(process_fd)
     identity = (before.st_dev, before.st_ino, before.st_uid, before.st_gid)
     if identity != (after.st_dev, after.st_ino, after.st_uid, after.st_gid):
         raise UnifiOperationError("cannot establish process exclusion")
@@ -208,7 +245,7 @@ def _child_inspection(process_fd: int, result_fd: int) -> None:
         _drop_inspection_identity()
         found = _inspect_process_fd(process_fd)
         result = {value: key for key, value in _PROCESS_RESULTS.items()}[found]
-    except FileNotFoundError:
+    except _ProcessDisappeared:
         result = b"D"
     except BaseException:
         pass
@@ -254,13 +291,14 @@ def _receive_child(pid: int, result_fd: int) -> tuple[bool, bool]:
                         else:
                             selector.unregister(result_fd)
                             eof = True
-                waited, child_status = os.waitpid(pid, os.WNOHANG)
-                if waited:
-                    status = child_status
+                if status is None:
+                    waited, child_status = os.waitpid(pid, os.WNOHANG)
+                    if waited:
+                        status = child_status
         if os.waitstatus_to_exitcode(status) != 0 or len(output) != 1:
             raise UnifiOperationError("cannot establish process exclusion")
         if bytes(output) == b"D":
-            raise FileNotFoundError
+            raise _ProcessDisappeared
         try:
             return _PROCESS_RESULTS[bytes(output)]
         except KeyError:
@@ -300,20 +338,17 @@ def _processes() -> tuple[bool, bool]:
             continue
         process_fd = None
         try:
-            process_fd = os.open(
-                process,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
-            )
+            process_fd = _open_process(process)
             try:
                 found_unifi, found_keytool = _inspect_process_fd(process_fd)
             except PermissionError:
                 identity = _abc_process_identity(process_fd)
                 try:
                     found_unifi, found_keytool = _inspect_as_abc(process_fd)
-                except FileNotFoundError:
+                except _ProcessDisappeared:
                     try:
                         _abc_process_identity(process_fd)
-                    except FileNotFoundError:
+                    except _ProcessDisappeared:
                         raise
                     raise UnifiOperationError(
                         "cannot establish process exclusion"
@@ -324,7 +359,7 @@ def _processes() -> tuple[bool, bool]:
                     ) from None
             unifi |= found_unifi
             keytool |= found_keytool
-        except FileNotFoundError:
+        except _ProcessDisappeared:
             continue
         except OSError:
             raise UnifiOperationError("cannot establish process exclusion") from None
