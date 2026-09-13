@@ -567,6 +567,67 @@ def _path_exists(root, name):
         return False
 
 
+def _normalize_clean_canonical(root, uid, gid):
+    """Narrowly normalize LinuxServer's fresh canonical keystore mode."""
+    try:
+        before = os.stat(CANONICAL, dir_fd=root, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+
+    descriptor = os.open(
+        CANONICAL,
+        os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+        dir_fd=root,
+    )
+    try:
+        opened = os.fstat(descriptor)
+        root_device = os.fstat(root).st_dev
+        mode = stat.S_IMODE(before.st_mode)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or not stat.S_ISREG(opened.st_mode)
+            or mode not in {0o600, 0o644}
+            or stat.S_IMODE(opened.st_mode) != mode
+            or (before.st_uid, before.st_gid) != (uid, gid)
+            or (opened.st_uid, opened.st_gid) != (uid, gid)
+            or before.st_dev != root_device
+            or opened.st_dev != root_device
+            or not 0 <= before.st_size <= MAX_STORE
+            or opened.st_size != before.st_size
+            or before.st_nlink != 1
+            or opened.st_nlink != 1
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+        ):
+            raise UnifiOperationError("unsafe fresh canonical keystore")
+
+        if mode == 0o600:
+            return
+
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+        current = os.stat(CANONICAL, dir_fd=root, follow_symlinks=False)
+        normalized = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(current.st_mode)
+            or not stat.S_ISREG(normalized.st_mode)
+            or stat.S_IMODE(current.st_mode) != 0o600
+            or stat.S_IMODE(normalized.st_mode) != 0o600
+            or (current.st_uid, current.st_gid) != (uid, gid)
+            or (normalized.st_uid, normalized.st_gid) != (uid, gid)
+            or current.st_dev != root_device
+            or normalized.st_dev != root_device
+            or not 0 <= current.st_size <= MAX_STORE
+            or normalized.st_size != current.st_size
+            or current.st_nlink != 1
+            or normalized.st_nlink != 1
+            or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)
+            or (normalized.st_dev, normalized.st_ino) != (before.st_dev, before.st_ino)
+        ):
+            raise UnifiOperationError("canonical keystore changed during normalization")
+    finally:
+        os.close(descriptor)
+
+
 def _validate_normalization_transaction(
     root, journal, uid, gid, *, temporary_journal_present
 ):
@@ -744,6 +805,10 @@ def secure_after_linuxserver_init():
         admin_entries[LOCK] = _admin_entry(root, LOCK, descriptor, uid, gid)
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
+        transaction_evidence = any(
+            _path_exists(root, name) for name in (JOURNAL, JOURNAL_NEW, STAGE, ROLLBACK)
+        )
+
         for name in (JOURNAL, JOURNAL_NEW):
             try:
                 descriptor = os.open(name, flags, dir_fd=root)
@@ -771,6 +836,13 @@ def secure_after_linuxserver_init():
                 gid,
                 temporary_journal_present=JOURNAL_NEW in descriptors,
             )
+
+        # LinuxServer creates a new canonical keystore as abc:abc 0644.  That
+        # compatibility exception is safe only when the lock proves there is no
+        # active or recoverable transaction whose inode relationships govern the
+        # canonical file.  Transaction paths remain strict 0600-only.
+        if not transaction_evidence:
+            _normalize_clean_canonical(root, uid, gid)
 
         # All names and transaction identity were proved before the first chown.
         # A crash between these fixed operations is restart-safe because mixed

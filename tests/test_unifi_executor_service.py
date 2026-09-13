@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from conftest import metadata
 
+import unifi_executor_files as executor_files
 import unifi_executor_service as service
 from unifi_client import PublicKeystoreState, UnifiClient, UnifiOperationError
 
@@ -572,6 +573,186 @@ def anchor_test_config(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(service, "_local_identity", lambda: (os.getuid(), os.getgid()))
+
+
+def clean_canonical_state(tmp_path, monkeypatch, mode=0o644):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    canonical = root / service.CANONICAL
+    canonical.write_bytes(b"public-test-fresh-keystore-placeholder")
+    canonical.chmod(mode)
+    anchor_test_config(monkeypatch, tmp_path)
+    monkeypatch.setattr(service.os, "fchown", lambda *args: None)
+    return root, canonical
+
+
+def test_clean_linuxserver_canonical_mode_is_normalized_without_changing_bytes(
+    tmp_path, monkeypatch
+):
+    original_open = os.open
+    root, canonical = clean_canonical_state(tmp_path, monkeypatch)
+    contents = canonical.read_bytes()
+    canonical_inode = canonical.stat().st_ino
+    synced = []
+    original_fsync = os.fsync
+
+    def observe_fsync(fd):
+        synced.append(os.fstat(fd))
+        original_fsync(fd)
+
+    monkeypatch.setattr(service.os, "fsync", observe_fsync)
+
+    assert service.secure_after_linuxserver_init() == "executor_state_secured"
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o600
+    assert canonical.read_bytes() == contents
+    assert any(item.st_ino == canonical_inode for item in synced)
+    assert any(stat.S_ISDIR(item.st_mode) for item in synced)
+
+    # Normal executor operation remains strict and accepts the normalized file.
+    files = object.__new__(executor_files._Files)
+    files.uid, files.gid = os.getuid(), os.getgid()
+    files.root = str(root)
+    files.fd = original_open(root, os.O_RDONLY | os.O_DIRECTORY)
+    files.filesystem = "testfs"
+    try:
+        assert stat.S_IMODE(files.status(service.CANONICAL).st_mode) == 0o600
+    finally:
+        files.close()
+
+
+def test_clean_secure_canonical_is_not_unnecessarily_mutated(tmp_path, monkeypatch):
+    _, canonical = clean_canonical_state(tmp_path, monkeypatch, mode=0o600)
+    canonical_inode = canonical.stat().st_ino
+    chmod_inodes = []
+    original_fchmod = os.fchmod
+
+    def observe_fchmod(fd, mode):
+        chmod_inodes.append(os.fstat(fd).st_ino)
+        original_fchmod(fd, mode)
+
+    monkeypatch.setattr(service.os, "fchmod", observe_fchmod)
+
+    assert service.secure_after_linuxserver_init() == "executor_state_secured"
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o600
+    assert canonical_inode not in chmod_inodes
+
+
+@pytest.mark.parametrize("mode", [0o666, 0o640])
+def test_clean_canonical_with_unexpected_mode_is_rejected(tmp_path, monkeypatch, mode):
+    _, canonical = clean_canonical_state(tmp_path, monkeypatch, mode=mode)
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert stat.S_IMODE(canonical.stat().st_mode) == mode
+
+
+def test_symlinked_clean_canonical_is_rejected(tmp_path, monkeypatch):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    target = root / "not-the-canonical-keystore"
+    target.write_bytes(b"public-test-keystore-placeholder")
+    target.chmod(0o600)
+    (root / service.CANONICAL).symlink_to(target.name)
+    anchor_test_config(monkeypatch, tmp_path)
+    monkeypatch.setattr(service.os, "fchown", lambda *args: None)
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_hard_linked_clean_canonical_is_rejected(tmp_path, monkeypatch):
+    root, canonical = clean_canonical_state(tmp_path, monkeypatch)
+    os.link(canonical, root / "unexpected-hard-link")
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o644
+
+
+def test_non_regular_clean_canonical_is_rejected(tmp_path, monkeypatch):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    (root / service.CANONICAL).mkdir(mode=0o700)
+    anchor_test_config(monkeypatch, tmp_path)
+    monkeypatch.setattr(service.os, "fchown", lambda *args: None)
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+
+
+def test_oversized_clean_canonical_is_rejected(tmp_path, monkeypatch):
+    _, canonical = clean_canonical_state(tmp_path, monkeypatch)
+    with canonical.open("r+b") as stream:
+        stream.truncate(service.MAX_STORE + 1)
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        (os.getuid() + 1, os.getgid()),
+        (os.getuid(), os.getgid() + 1),
+    ],
+)
+def test_clean_canonical_with_wrong_local_identity_is_rejected(
+    tmp_path, monkeypatch, identity
+):
+    root = tmp_path / "data"
+    root.mkdir(mode=0o700)
+    canonical = root / service.CANONICAL
+    canonical.write_bytes(b"public-test-keystore-placeholder")
+    canonical.chmod(0o644)
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(UnifiOperationError):
+            service._normalize_clean_canonical(descriptor, *identity)
+    finally:
+        os.close(descriptor)
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o644
+
+
+def test_replaced_clean_canonical_during_chmod_fails_closed(tmp_path, monkeypatch):
+    root, canonical = clean_canonical_state(tmp_path, monkeypatch)
+    original_fchmod = os.fchmod
+    canonical_inode = canonical.stat().st_ino
+
+    def replace_during_canonical_chmod(fd, mode):
+        if os.fstat(fd).st_ino == canonical_inode:
+            replacement = root / "replacement"
+            replacement.write_bytes(canonical.read_bytes())
+            replacement.chmod(0o644)
+            os.replace(replacement, canonical)
+        original_fchmod(fd, mode)
+
+    monkeypatch.setattr(service.os, "fchmod", replace_during_canonical_chmod)
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert canonical.stat().st_ino != canonical_inode
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o644
+
+
+def test_pending_transaction_does_not_use_clean_install_mode_exception(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "config/data"
+    root.mkdir(parents=True, mode=0o700)
+    pending_normalization_state(root)
+    canonical = root / service.CANONICAL
+    canonical.chmod(0o644)
+    anchor_test_config(monkeypatch, tmp_path)
+    ownership = []
+    monkeypatch.setattr(
+        service.os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid))
+    )
+
+    with pytest.raises(UnifiOperationError):
+        service.secure_after_linuxserver_init()
+    assert ownership == []
+    assert stat.S_IMODE(canonical.stat().st_mode) == 0o644
 
 
 def mark_admin_entry_root_owned(monkeypatch, root_owned):
