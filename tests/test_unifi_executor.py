@@ -1143,13 +1143,17 @@ def _filesystem_proc(monkeypatch, fdinfo, mountinfo):
     import io
 
     content = {
-        "/proc/self/fdinfo/123": fdinfo,
-        "/proc/self/mountinfo": mountinfo,
+        "/proc/self/fdinfo/123": (
+            fdinfo.encode("ascii") if isinstance(fdinfo, str) else fdinfo
+        ),
+        "/proc/self/mountinfo": (
+            mountinfo.encode("ascii") if isinstance(mountinfo, str) else mountinfo
+        ),
     }
 
-    def opened(path, *, encoding):
-        assert encoding == "ascii"
-        return io.StringIO(content[path])
+    def opened(path, mode):
+        assert mode == "rb"
+        return io.BytesIO(content[path])
 
     monkeypatch.setattr("builtins.open", opened)
 
@@ -1162,6 +1166,19 @@ def test_filesystem_detection_uses_matching_mount(monkeypatch):
         "42 1 8:1 / /config/data rw,relatime - ext4 /dev/sda1 rw\n",
     )
     assert filesystem._filesystem(123) == "ext4"
+
+
+@pytest.mark.parametrize(
+    "path", ["caf\N{LATIN SMALL LETTER E WITH ACUTE}".encode(), b"bad\xff"]
+)
+def test_filesystem_detection_ignores_non_ascii_unrelated_mount_path(monkeypatch, path):
+    _filesystem_proc(
+        monkeypatch,
+        b"mnt_id:\t42\n",
+        b"41 1 8:1 / /" + path + b" rw - ext4 /dev/sda1 rw\n"
+        b"42 1 8:2 / /config/data rw - xfs /dev/sda2 rw\n",
+    )
+    assert filesystem._filesystem(123) == "xfs"
 
 
 def test_filesystem_detection_accepts_btrfs_anonymous_device(monkeypatch):
@@ -1191,6 +1208,15 @@ def test_filesystem_detection_accepts_bind_mount(monkeypatch):
         lambda fd: SimpleNamespace(st_dev=os.makedev(8, 1)),
     )
     assert filesystem._filesystem(123) == "xfs"
+
+
+def test_filesystem_detection_accepts_dash_mount_source(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        "42 1 8:1 / /config/data rw - ext4 - rw\n",
+    )
+    assert filesystem._filesystem(123) == "ext4"
 
 
 @pytest.mark.parametrize(
@@ -1238,9 +1264,10 @@ def test_filesystem_detection_rejects_missing_mountinfo_match(monkeypatch):
 def test_filesystem_detection_rejects_duplicate_mountinfo_mount_id(monkeypatch):
     _filesystem_proc(
         monkeypatch,
-        "mnt_id:\t42\n",
-        "42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n"
-        "42 1 8:1 /other /config/data rw - xfs /dev/sda1 rw\n",
+        b"mnt_id:\t42\n",
+        b"42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n"
+        b"41 1 8:2 / /bad\xff rw - xfs /dev/sda2 rw\n"
+        b"42 1 8:1 /other /config/data rw - xfs /dev/sda1 rw\n",
     )
     with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
         filesystem._filesystem(123)
@@ -1279,6 +1306,16 @@ def test_filesystem_detection_rejects_overlong_filesystem_type(monkeypatch):
         monkeypatch,
         "mnt_id:\t42\n",
         f"42 1 8:1 / /config/data rw - {'x' * 65} source rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_non_ascii_filesystem_type(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        b"mnt_id:\t42\n",
+        b"42 1 8:1 / /config/data rw - ext\xff /dev/sda1 rw\n",
     )
     with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
         filesystem._filesystem(123)

@@ -46,29 +46,29 @@ def _filesystem(fd: int) -> str:
         raise UnifiOperationError("cannot identify appdata filesystem")
 
     try:
-        with open(f"/proc/self/fdinfo/{fd}", encoding="ascii") as stream:
+        with open(f"/proc/self/fdinfo/{fd}", "rb") as stream:
             mount_id = None
             for line in stream:
                 fields = line.split()
-                if not fields or fields[0] != "mnt_id:":
+                if not fields or fields[0] != b"mnt_id:":
                     continue
                 if (
                     mount_id is not None
                     or len(fields) != 2
                     or not fields[1].isdigit()
                     or len(fields[1]) > 20
-                    or fields[1].startswith("0")
+                    or fields[1].startswith(b"0")
                 ):
                     raise UnifiOperationError("cannot identify appdata filesystem")
                 mount_id = fields[1]
-    except (OSError, UnicodeError):
+    except OSError:
         raise UnifiOperationError("cannot identify appdata filesystem") from None
 
     if mount_id is None:
         raise UnifiOperationError("cannot identify appdata filesystem")
 
     try:
-        with open("/proc/self/mountinfo", encoding="ascii") as stream:
+        with open("/proc/self/mountinfo", "rb") as stream:
             match = None
             for line in stream:
                 fields = line.split()
@@ -76,7 +76,7 @@ def _filesystem(fd: int) -> str:
                     if match is not None:
                         raise UnifiOperationError("cannot identify appdata filesystem")
                     match = fields
-    except (OSError, UnicodeError):
+    except OSError:
         raise UnifiOperationError("cannot identify appdata filesystem") from None
 
     if match is None:
@@ -85,18 +85,23 @@ def _filesystem(fd: int) -> str:
     if (
         len(fields) < 10
         or not fields[1].isdigit()
-        or fields[2].count(":") != 1
-        or not all(part.isdigit() for part in fields[2].split(":"))
-        or fields.count("-") != 1
+        or fields[2].count(b":") != 1
+        or not all(part.isdigit() for part in fields[2].split(b":"))
     ):
         raise UnifiOperationError("cannot identify appdata filesystem")
-    separator = fields.index("-")
-    if separator < 6 or len(fields) != separator + 4:
+    try:
+        separator = fields.index(b"-", 6)
+    except ValueError:
+        raise UnifiOperationError("cannot identify appdata filesystem") from None
+    if len(fields) != separator + 4:
         raise UnifiOperationError("cannot identify appdata filesystem")
-    filesystem = fields[separator + 1]
-    if not filesystem or len(filesystem) > 64:
+    filesystem_data = fields[separator + 1]
+    if not filesystem_data or len(filesystem_data) > 64:
         raise UnifiOperationError("cannot identify appdata filesystem")
-    return filesystem
+    try:
+        return filesystem_data.decode("ascii")
+    except UnicodeError:
+        raise UnifiOperationError("cannot identify appdata filesystem") from None
 
 
 class _Files:
