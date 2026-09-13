@@ -38,22 +38,65 @@ def _filesystem(fd: int) -> str:
     """Return the mounted filesystem type, including through a bind mount.
 
     The transaction protocol uses only local-filesystem primitives with their
-    normal POSIX/Linux semantics.  Btrfs detection remains explicit because its
-    anonymous ``st_dev`` limitation is relevant to persisted recovery identity,
-    but a different local filesystem is not itself unsafe.
+    normal POSIX/Linux semantics.  The mount ID identifies the descriptor's
+    mount even when its ``st_dev`` is anonymous or it was opened through a bind
+    mount.  A particular local filesystem type is not itself unsafe.
     """
-    device = os.fstat(fd).st_dev
-    number = f"{os.major(device)}:{os.minor(device)}"
-    with open("/proc/self/mountinfo", encoding="ascii") as stream:
-        for line in stream:
-            fields = line.split()
-            if fields[2] == number:
-                separator = fields.index("-")
-                filesystem = fields[separator + 1]
-                if not filesystem or len(filesystem) > 64:
-                    break
-                return filesystem
-    raise UnifiOperationError("cannot identify appdata filesystem")
+    if isinstance(fd, bool) or not isinstance(fd, int) or fd < 0:
+        raise UnifiOperationError("cannot identify appdata filesystem")
+
+    try:
+        with open(f"/proc/self/fdinfo/{fd}", encoding="ascii") as stream:
+            mount_id = None
+            for line in stream:
+                fields = line.split()
+                if not fields or fields[0] != "mnt_id:":
+                    continue
+                if (
+                    mount_id is not None
+                    or len(fields) != 2
+                    or not fields[1].isdigit()
+                    or len(fields[1]) > 20
+                    or fields[1].startswith("0")
+                ):
+                    raise UnifiOperationError("cannot identify appdata filesystem")
+                mount_id = fields[1]
+    except (OSError, UnicodeError):
+        raise UnifiOperationError("cannot identify appdata filesystem") from None
+
+    if mount_id is None:
+        raise UnifiOperationError("cannot identify appdata filesystem")
+
+    try:
+        with open("/proc/self/mountinfo", encoding="ascii") as stream:
+            match = None
+            for line in stream:
+                fields = line.split()
+                if fields and fields[0] == mount_id:
+                    if match is not None:
+                        raise UnifiOperationError("cannot identify appdata filesystem")
+                    match = fields
+    except (OSError, UnicodeError):
+        raise UnifiOperationError("cannot identify appdata filesystem") from None
+
+    if match is None:
+        raise UnifiOperationError("cannot identify appdata filesystem")
+    fields = match
+    if (
+        len(fields) < 10
+        or not fields[1].isdigit()
+        or fields[2].count(":") != 1
+        or not all(part.isdigit() for part in fields[2].split(":"))
+        or fields.count("-") != 1
+    ):
+        raise UnifiOperationError("cannot identify appdata filesystem")
+    separator = fields.index("-")
+    if separator < 6 or len(fields) != separator + 4:
+        raise UnifiOperationError("cannot identify appdata filesystem")
+    filesystem = fields[separator + 1]
+    if not filesystem or len(filesystem) > 64:
+        raise UnifiOperationError("cannot identify appdata filesystem")
+    return filesystem
 
 
 class _Files:

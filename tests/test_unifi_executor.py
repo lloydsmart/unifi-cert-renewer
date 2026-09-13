@@ -1139,20 +1139,149 @@ def test_real_directory_opener_and_symlink_rejection(tmp_path, monkeypatch):
         filesystem._Files(os.getuid(), os.getgid())
 
 
-@pytest.mark.parametrize("kind", ["btrfs", "xfs", "zfs", "ext4"])
-def test_filesystem_detection_accepts_normal_local_filesystems(
-    platform, monkeypatch, kind
-):
+def _filesystem_proc(monkeypatch, fdinfo, mountinfo):
     import io
 
-    files = platform.make_files()
-    try:
-        dev = os.fstat(files.fd).st_dev
-        line = f"1 2 {os.major(dev)}:{os.minor(dev)} / /config/data rw - {kind} source rw\n"
-        monkeypatch.setattr("builtins.open", lambda *args, **kwargs: io.StringIO(line))
-        assert filesystem._filesystem(files.fd) == kind
-    finally:
-        files.close()
+    content = {
+        "/proc/self/fdinfo/123": fdinfo,
+        "/proc/self/mountinfo": mountinfo,
+    }
+
+    def opened(path, *, encoding):
+        assert encoding == "ascii"
+        return io.StringIO(content[path])
+
+    monkeypatch.setattr("builtins.open", opened)
+
+
+def test_filesystem_detection_uses_matching_mount(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "pos:\t0\nflags:\t0100000\nmnt_id:\t42\nino:\t1\n",
+        "41 malformed unrelated record\n"
+        "42 1 8:1 / /config/data rw,relatime - ext4 /dev/sda1 rw\n",
+    )
+    assert filesystem._filesystem(123) == "ext4"
+
+
+def test_filesystem_detection_accepts_btrfs_anonymous_device(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        "42 1 8:1 /subvol /config/data rw - btrfs /dev/sda1 rw\n",
+    )
+    monkeypatch.setattr(
+        filesystem.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_dev=os.makedev(0, 99)),
+    )
+    assert filesystem._filesystem(123) == "btrfs"
+
+
+def test_filesystem_detection_accepts_bind_mount(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t73\n",
+        "12 1 8:1 / / rw - ext4 /dev/sda1 rw\n"
+        "73 12 8:1 /appdata /config/data rw - xfs /dev/sdb1 rw\n",
+    )
+    monkeypatch.setattr(
+        filesystem.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_dev=os.makedev(8, 1)),
+    )
+    assert filesystem._filesystem(123) == "xfs"
+
+
+@pytest.mark.parametrize(
+    "fdinfo",
+    [
+        "pos:\t0\nflags:\t0100000\n",
+        "mnt_id:\n",
+        "mnt_id:\tnot-a-number\n",
+        "mnt_id:\t42 extra\n",
+        "mnt_id 42\n",
+        "mnt_id:\t0\n",
+        f"mnt_id:\t{'1' * 21}\n",
+    ],
+)
+def test_filesystem_detection_rejects_missing_or_malformed_fdinfo(monkeypatch, fdinfo):
+    _filesystem_proc(
+        monkeypatch,
+        fdinfo,
+        "42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_duplicate_fdinfo_mount_id(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\nmnt_id:\t42\n",
+        "42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_missing_mountinfo_match(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        "41 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_duplicate_mountinfo_mount_id(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        "42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw\n"
+        "42 1 8:1 /other /config/data rw - xfs /dev/sda1 rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+@pytest.mark.parametrize(
+    "mountinfo",
+    [
+        "42\n",
+        "42 parent 8:1 / /config/data rw - ext4 /dev/sda1 rw\n",
+        "42 1 invalid / /config/data rw - ext4 /dev/sda1 rw\n",
+        "42 1 8:1 / /config/data rw ext4 /dev/sda1 rw\n",
+        "42 1 8:1 / /config/data rw - - ext4 /dev/sda1 rw\n",
+        "42 1 8:1 / /config/data rw - ext4 /dev/sda1\n",
+        "42 1 8:1 / /config/data rw - ext4 /dev/sda1 rw extra\n",
+    ],
+)
+def test_filesystem_detection_rejects_malformed_mountinfo(monkeypatch, mountinfo):
+    _filesystem_proc(monkeypatch, "mnt_id:\t42\n", mountinfo)
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_empty_filesystem_type(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        "42 1 8:1 / /config/data rw -  /dev/sda1 rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
+
+
+def test_filesystem_detection_rejects_overlong_filesystem_type(monkeypatch):
+    _filesystem_proc(
+        monkeypatch,
+        "mnt_id:\t42\n",
+        f"42 1 8:1 / /config/data rw - {'x' * 65} source rw\n",
+    )
+    with pytest.raises(UnifiOperationError, match="cannot identify appdata filesystem"):
+        filesystem._filesystem(123)
 
 
 def test_local_identity_requires_reviewed_root_and_abc_baseline(monkeypatch):
