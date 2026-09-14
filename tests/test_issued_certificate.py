@@ -10,6 +10,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from certificate import (
     MAX_ISSUED_CERTIFICATE_BYTES,
+    OPNSENSE_IKE_INTERMEDIATE_EKU_OID,
     IssuedCertificateValidationError,
     validate_issued_certificate,
 )
@@ -194,6 +195,50 @@ def test_accepts_valid_server_leaf_and_matching_configured_ca(material) -> None:
     assert info.ip_sans == material.csr_info.ip_sans
 
 
+@pytest.mark.parametrize(
+    "eku",
+    [
+        (ExtendedKeyUsageOID.SERVER_AUTH,),
+        (
+            ExtendedKeyUsageOID.SERVER_AUTH,
+            OPNSENSE_IKE_INTERMEDIATE_EKU_OID,
+        ),
+    ],
+)
+def test_accepts_supported_server_eku_profiles(material, eku) -> None:
+    certificate = _issued_certificate(material, eku=eku)
+
+    info = _validate(material, certificate)
+
+    assert info.spki_sha256 == material.csr_info.spki_sha256
+
+
+@pytest.mark.parametrize(
+    "eku",
+    [
+        (OPNSENSE_IKE_INTERMEDIATE_EKU_OID,),
+        (
+            ExtendedKeyUsageOID.SERVER_AUTH,
+            ExtendedKeyUsageOID.CLIENT_AUTH,
+        ),
+        (
+            ExtendedKeyUsageOID.SERVER_AUTH,
+            OPNSENSE_IKE_INTERMEDIATE_EKU_OID,
+            ExtendedKeyUsageOID.CLIENT_AUTH,
+        ),
+        (
+            ExtendedKeyUsageOID.SERVER_AUTH,
+            x509.ObjectIdentifier("1.3.6.1.4.1.55555.1"),
+        ),
+    ],
+)
+def test_rejects_unsupported_server_eku_profiles(material, eku) -> None:
+    certificate = _issued_certificate(material, eku=eku)
+
+    with pytest.raises(IssuedCertificateValidationError, match="not accepted"):
+        _validate(material, certificate)
+
+
 def test_accepts_der_and_explicitly_allows_absent_key_usage(material) -> None:
     certificate = _issued_certificate(material, key_usage=None)
 
@@ -292,16 +337,6 @@ def test_rejects_unsupported_san_identity_type(material) -> None:
         ({"basic_constraints": None}, "missing Basic Constraints"),
         ({"basic_constraints": True}, "CA to FALSE"),
         ({"eku": None}, "missing Extended Key Usage"),
-        ({"eku": (ExtendedKeyUsageOID.CLIENT_AUTH,)}, "only serverAuth"),
-        (
-            {
-                "eku": (
-                    ExtendedKeyUsageOID.SERVER_AUTH,
-                    ExtendedKeyUsageOID.CLIENT_AUTH,
-                )
-            },
-            "only serverAuth",
-        ),
         ({"key_usage": "ca"}, "CA signing"),
         ({"key_usage": "key-encipherment"}, "digitalSignature"),
         ({"key_usage": "neither"}, "digitalSignature"),

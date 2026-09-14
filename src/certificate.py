@@ -25,6 +25,7 @@ MAX_TRUST_BUNDLE_BYTES = 256 * 1024
 MIN_CERTIFICATE_LIFETIME_DAYS = 1
 MAX_CERTIFICATE_LIFETIME_DAYS = 397
 DEFAULT_CLOCK_SKEW = timedelta(minutes=5)
+OPNSENSE_IKE_INTERMEDIATE_EKU_OID = x509.ObjectIdentifier("1.3.6.1.5.5.8.2.2")
 
 _CERTIFICATE_PEM_RE = re.compile(
     rb"[ \t\r\n]*-----BEGIN CERTIFICATE-----\r?\n"
@@ -38,6 +39,18 @@ _CERTIFICATE_PEM_BLOCK_RE = re.compile(
 )
 _ALLOWED_SIGNATURE_HASHES = frozenset({"sha256", "sha384", "sha512"})
 _SUPPORTED_RSA_KEY_SIZES = frozenset({2048, 3072, 4096})
+_ALLOWED_SERVER_EKU_PROFILES = frozenset(
+    {
+        frozenset({ExtendedKeyUsageOID.SERVER_AUTH}),
+        # Accept this exact profile solely for stock OPNsense server_cert compatibility.
+        frozenset(
+            {
+                ExtendedKeyUsageOID.SERVER_AUTH,
+                OPNSENSE_IKE_INTERMEDIATE_EKU_OID,
+            }
+        ),
+    }
+)
 
 
 class CertificateInspectionError(ValueError):
@@ -388,9 +401,9 @@ def _validate_leaf_extensions(certificate: x509.Certificate) -> None:
         certificate, x509.ExtendedKeyUsage, "Extended Key Usage"
     )
     assert isinstance(extended_key_usage, x509.ExtendedKeyUsage)
-    if set(extended_key_usage) != {ExtendedKeyUsageOID.SERVER_AUTH}:
+    if frozenset(extended_key_usage) not in _ALLOWED_SERVER_EKU_PROFILES:
         raise IssuedCertificateValidationError(
-            "issued certificate Extended Key Usage must contain only serverAuth"
+            "issued certificate Extended Key Usage profile is not accepted"
         )
 
     try:
