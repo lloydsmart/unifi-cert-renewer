@@ -187,12 +187,13 @@ docker compose -f deployment/renewer/compose.example.yaml run --rm renewer insta
 inside the UniFi key-owning environment and returns validated public identity,
 key, and proof-of-possession metadata. `prepare` performs a fresh inspection and
 CSR, signs through OPNsense, validates the issued leaf and import plan, then
-exits without changing UniFi. Because no transaction material is persisted in
-the stateless renewer, a later `install` starts a new transaction and obtains a
-freshly signed certificate. `install` is the sole mutation mode: it performs
-the complete sequence once, requires configured live TLS verification, and
-reports `renewal_complete` only after exact live-leaf verification and executor
-finalisation.
+exits without changing UniFi. `prepare` is state-changing on OPNsense because it
+issues a certificate, but it does not mutate UniFi. Because no transaction
+material is persisted in the stateless renewer, a later `install` starts a new
+transaction and obtains a freshly signed certificate. `install` is the sole
+UniFi-mutating one-shot mode: it performs the complete sequence once, requires
+configured live TLS verification, and reports `renewal_complete` only after
+exact live-leaf verification and executor finalisation.
 
 There is no cron entry, scheduler loop, daemon, threshold policy, automatic
 state-changing retry, or container restart loop. After any ambiguous signing,
