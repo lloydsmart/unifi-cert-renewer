@@ -16,6 +16,6 @@ RUN /opt/unifi-cert-renewer/venv/bin/python -m pip install \
 
 COPY src/certificate.py src/csr.py src/public_key.py src/secure_file.py \
     src/tls_policy.py src/unifi_client.py src/unifi_executor.py \
-    src/unifi_executor_files.py src/unifi_process.py \
+    src/unifi_executor_client.py src/unifi_executor_files.py src/unifi_process.py \
     src/unifi_executor_service.py /opt/unifi-cert-renewer/src/
 COPY deployment/unifi/root/ /
