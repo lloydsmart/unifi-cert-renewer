@@ -1,0 +1,26 @@
+services:
+  renewer:
+    image: ${RENEWER_IMAGE:?set RENEWER_IMAGE to the reviewed registry digest}
+    user: "1000:1000"
+    group_add:
+      - "984"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    volumes:
+      - type: bind
+        source: /run/unifi-cert-renewer
+        target: /run/unifi-cert-renewer
+        read_only: true
+      - type: bind
+        source: ${RENEWER_SECRETS_DIRECTORY:?set RENEWER_SECRETS_DIRECTORY}
+        target: /run/secrets
+        read_only: true
+    command:
+      - inspect

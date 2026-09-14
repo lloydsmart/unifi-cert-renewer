@@ -63,6 +63,14 @@ A Stage-6 result is explicitly **not a completed renewal**. Production signing
 and import still require a separately supervised first run; unattended
 threshold policy and scheduling remain future work.
 
+Issue #25 adds a dedicated non-root renewer image and a strict production
+entrypoint with `inspect`, `csr`, `prepare`, and `install` one-shot modes. It
+connects only through `UnifiClient(SocketUnifiExecutionBoundary())`, with the
+shared runtime directory and supplemental gid `984`; it receives neither UniFi
+appdata, the UniFi keystore-password secret, nor the Docker socket. See the
+[production deployment guide](docs/production-deployment.md) and
+[first supervised renewal procedure](docs/first-production-renewal.md).
+
 Stage 7 opens a fresh Python TLS connection to an explicit numeric address,
 port, and server identity. The numeric address avoids an unbounded DNS lookup
 outside the readiness deadline. It uses normal CA-chain and hostname verification,
@@ -139,7 +147,8 @@ The private key must not be exported from UniFi during routine renewal.
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
    finalisation are implemented.
 8. Threshold-based one-shot renewal.
-9. Container packaging and external scheduling.
+9. Non-root one-shot container packaging is implemented; external scheduling is
+   not yet implemented.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.

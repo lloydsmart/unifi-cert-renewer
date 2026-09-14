@@ -18,6 +18,13 @@ class SecureFileError(ValueError):
     """A safe-to-display error for an untrusted local file."""
 
 
+def validate_secure_filename(filename: str, *, source_name: str) -> str:
+    """Validate one basename without opening it or exposing its resolved path."""
+
+    _, _, contained_name = _resolve_secure_path(filename, source_name)
+    return contained_name
+
+
 def _raise_file_error(source_name: str, condition: str) -> None:
     raise SecureFileError(f"{source_name} {condition}") from None
 

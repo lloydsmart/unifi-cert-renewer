@@ -30,6 +30,7 @@ from unifi_client import (
     prepare_certificate_import,
 )
 from unifi_executor import ProductionUnifiExecutor, _local_identity, _validate_journal
+from unifi_executor_client import SocketUnifiExecutionBoundary
 from unifi_executor_files import (
     CANONICAL,
     JOURNAL,
@@ -40,6 +41,8 @@ from unifi_executor_files import (
     ROLLBACK,
     STAGE,
 )
+
+__all__ = ["SocketUnifiExecutionBoundary", "main"]
 
 PROTOCOL_VERSION = 1
 SOCKET_DIRECTORY = "/run/unifi-cert-renewer"
@@ -879,93 +882,6 @@ def secure_after_linuxserver_init():
             os.close(descriptor)
         os.close(root)
     return "executor_state_secured"
-
-
-class SocketUnifiExecutionBoundary:
-    """Renewer-side adapter for the fixed local executor protocol."""
-
-    def __init__(self):
-        self._exclusive = False
-        self._installed = None
-
-    def _call(self, operation, arguments):
-        request = _request(operation, arguments)
-        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        connection.settimeout(SOCKET_TIMEOUT_SECONDS)
-        try:
-            directory = _validate_socket_directory()
-            before = os.stat(SOCKET_PATH, follow_symlinks=False)
-            if (
-                not stat.S_ISSOCK(before.st_mode)
-                or before.st_uid != 0
-                or before.st_gid != directory.st_gid
-                or stat.S_IMODE(before.st_mode) != 0o660
-            ):
-                raise ValueError
-            connection.connect(SOCKET_PATH)
-            after = os.stat(SOCKET_PATH, follow_symlinks=False)
-            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-                raise ValueError
-            _write_message(connection, request)
-            response = _read_message(connection)
-            return _decode_response(response)
-        except Exception:
-            raise UnifiOperationError("UniFi executor request failed") from None
-        finally:
-            connection.close()
-
-    @contextmanager
-    def exclusive(self):
-        if self._exclusive:
-            raise UnifiOperationError("executor client already active")
-        self._exclusive = True
-        self._installed = None
-        try:
-            yield
-        finally:
-            self._installed = None
-            self._exclusive = False
-
-    def inspect_public_state(self):
-        if self._exclusive and self._installed is not None:
-            return self._installed
-        result = _exact_dict(self._call("inspect", {}), {"state"})
-        return _decode_state(result["state"])
-
-    def generate_csr(self, policy):
-        result = _exact_dict(
-            self._call("generate_csr", {"policy": _encode_policy(policy)}), {"csr_pem"}
-        )
-        return _binary(result["csr_pem"])
-
-    def import_certificate_reply(self, request, *, expected_before):
-        if not self._exclusive or self._installed is not None:
-            raise UnifiOperationError("exclusive executor client context required")
-        if request.before != expected_before:
-            raise UnifiOperationError("stale public import request")
-        result = _exact_dict(
-            self._call("install", {"request": _encode_import_request(request)}),
-            {"state"},
-        )
-        self._installed = _decode_state(result["state"])
-        return 0
-
-    def finalize_live_verification(self, expected_leaf_der):
-        result = _exact_dict(
-            self._call(
-                "finalize", {"expected_leaf_der": _encode_binary(expected_leaf_der)}
-            ),
-            {"outcome"},
-        )
-        if result["outcome"] != "renewal_finalized":
-            raise UnifiOperationError("unexpected executor finalisation result")
-        return result["outcome"]
-
-    def recover(self):
-        result = _exact_dict(self._call("recover", {}), {"outcome"})
-        if result["outcome"] not in _RECOVERY_RESULTS:
-            raise UnifiOperationError("unexpected executor recovery result")
-        return result["outcome"]
 
 
 def main(argv=None):

@@ -12,7 +12,7 @@ docker build -f deployment/unifi/Dockerfile \
 
 Use that image in place of the otherwise identical LinuxServer UniFi image. The
 overlay installs the executor source, its hash-locked dependency, and native s6
-service definitions. It does not package or schedule the renewer itself.
+service definitions. The separate renewer image is described below.
 Record and review the upstream image digest rather than building production from
 a mutable tag. The repository's deny-by-default `.dockerignore` keeps unrelated
 workspace files, Git data, local secrets, and certificate/keystore artifacts out
@@ -50,8 +50,78 @@ join that group. A network client cannot connect because there is no IP listener
 If the directory is absent, symlinked, not root-owned, or not exactly `0750`, or
 the socket has unsafe ownership/type/mode, the client/server fails closed.
 
-The numeric group is deployment metadata, not a secret. Choose an unused value
-and configure it consistently; `984` is only an example.
+The numeric group is deployment metadata, not a secret. Production currently
+uses `984`; configure it consistently on the host and both containers. Do not
+add unrelated processes to this group.
+
+## Unprivileged renewer image
+
+Build the renewer from the repository root:
+
+```bash
+docker build -f deployment/renewer/Dockerfile \
+  -t local/unifi-cert-renewer:reviewed .
+```
+
+The Dockerfile pins the reviewed multi-platform manifest for the minimal
+official `python:3.12-slim-bookworm` base and installs the hash-locked runtime
+requirements. If that pin is intentionally updated, review the new upstream
+image and record the replacement digest. After pushing the reviewed image,
+deploy its registry digest rather than the local tag.
+
+The image runs as uid/gid `1000:1000`. It packages only renewer orchestration,
+certificate/CSR/TLS code, the OPNsense client, and the client half of the fixed
+executor protocol. It does not contain the privileged executor, keystore file
+operations, UniFi process control, or recovery implementation.
+
+[`deployment/renewer/compose.example.yaml`](../deployment/renewer/compose.example.yaml)
+is the production-shape example. Set `RENEWER_IMAGE` to the reviewed registry
+digest and `RENEWER_SECRETS_DIRECTORY` to the host directory described below.
+The service is read-only, drops every capability, enables
+`no-new-privileges`, has no restart policy, and receives only:
+
+- `/run/unifi-cert-renewer` at the same path, read-only, for the Unix socket;
+- supplemental gid `984`; and
+- its own read-only `/run/secrets` configuration and OPNsense credentials.
+
+It does not receive UniFi `/config`, the UniFi keystore-password secret, or the
+Docker socket. These omissions are part of the trust boundary, not deployment
+options.
+
+Create a dedicated secrets directory that the container can search without
+making it writable. One suitable ownership model is a root-owned directory with
+group `1000`, mode `0750`; root-owned public files mode `0444`; and the two API
+credential files owned by uid `1000`, mode `0400`. The secure-file checks reject
+symlinks, unsafe ownership, group/world-writable files, and group/world-readable
+API credentials.
+
+The fixed files are:
+
+| File | Purpose | Private |
+| --- | --- | --- |
+| `renewer-config.json` | Strict public production configuration | No |
+| `opnsense-api-key` | OPNsense API key | Yes, mode `0400` |
+| `opnsense-api-secret` | OPNsense API secret | Yes, mode `0400` |
+| Configured `trusted_ca_name` | Public issuing CA certificate | No |
+| Configured `opnsense.tls_ca_name` | Optional public OPNsense HTTPS CA | No |
+
+Start from
+[`renewer-config.example.json`](../deployment/renewer/renewer-config.example.json),
+replace every example identity and fingerprint, and keep the exact JSON field
+set. `live_tls.address` must be a numeric address; `server_hostname` is the
+independently verified DNS or IP identity. Arbitrary paths, aliases, commands,
+executables, services, and socket paths are not configurable.
+
+Before use, inspect the resolved Compose definition and image identity:
+
+```bash
+docker compose -f deployment/renewer/compose.example.yaml config
+docker image inspect --format '{{.Config.User}}' "$RENEWER_IMAGE"
+```
+
+The expected image user is `1000:1000`. The resolved definition must show gid
+`984` and only the runtime and renewer-secrets mounts. It must not show
+`/config`, `unifi-keystore-password`, or `/var/run/docker.sock`.
 
 ## s6 startup ordering
 
@@ -103,6 +173,31 @@ unifi = UnifiClient(SocketUnifiExecutionBoundary())
 No socket path or privileged target is configurable. The caller can provide only
 the existing public certificate policy and public renewal material. Protocol
 version 1 exposes `inspect`, `generate_csr`, `install`, `recover`, and `finalize`.
+
+The production entrypoint accepts exactly one of four manual one-shot modes:
+
+```bash
+docker compose -f deployment/renewer/compose.example.yaml run --rm renewer inspect
+docker compose -f deployment/renewer/compose.example.yaml run --rm renewer csr
+docker compose -f deployment/renewer/compose.example.yaml run --rm renewer prepare
+docker compose -f deployment/renewer/compose.example.yaml run --rm renewer install
+```
+
+`inspect` returns validated public certificate metadata. `csr` generates a CSR
+inside the UniFi key-owning environment and returns validated public identity,
+key, and proof-of-possession metadata. `prepare` performs a fresh inspection and
+CSR, signs through OPNsense, validates the issued leaf and import plan, then
+exits without changing UniFi. Because no transaction material is persisted in
+the stateless renewer, a later `install` starts a new transaction and obtains a
+freshly signed certificate. `install` is the sole mutation mode: it performs
+the complete sequence once, requires configured live TLS verification, and
+reports `renewal_complete` only after exact live-leaf verification and executor
+finalisation.
+
+There is no cron entry, scheduler loop, daemon, threshold policy, automatic
+state-changing retry, or container restart loop. After any ambiguous signing,
+installation, verification, or finalisation failure, stop and inspect the
+recorded state; do not automatically invoke the mode again.
 
 ## Filesystem behavior
 
@@ -171,10 +266,11 @@ second prints the Java executable target, and the third prints `(True, False)`.
 These commands do not request a CSR, sign, install, restart UniFi, or access
 private-key material.
 
-The pinned Trivy `0.74.0` enforcing scan, using vulnerability databases fetched
-with TLS verification, also failed this final candidate: 31 fixable findings
-(6 CRITICAL and 25 HIGH) were attributed to upstream UniFi Java libraries (23)
-and its `pebble` binary (8), not the renewer's Python locks. Under this
-repository's zero-suppression policy, that image is not cleared for the first
-supervised renewal. Use a remediated upstream image and repeat the complete
-image and boot validation; do not suppress these results merely to proceed.
+The pinned Trivy `0.74.0` scan reported 31 fixable findings (6 CRITICAL and 25
+HIGH) in the exact reviewed upstream UniFi image: 23 in upstream Java libraries
+and 8 in its `pebble` binary. Comparison against that exact upstream is required.
+HIGH/CRITICAL findings introduced by the derivative are blockers. Findings
+inherited unchanged from the exact reviewed upstream are not automatically
+blockers unless review shows that they materially undermine the executor or
+keystore trust boundary. Record both the comparison and that impact review; do
+not suppress or silently discard inherited findings.

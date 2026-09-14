@@ -29,6 +29,14 @@ def test_safe_basename_resolves_beneath_normalized_trusted_root(tmp_path) -> Non
     )
 
 
+def test_public_filename_validator_does_not_open_the_file(tmp_path) -> None:
+    assert (
+        secure_file.validate_secure_filename("public-ca.pem", source_name="Public CA")
+        == "public-ca.pem"
+    )
+    assert not (tmp_path / "public-ca.pem").exists()
+
+
 @pytest.mark.parametrize(
     "filename",
     [

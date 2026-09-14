@@ -1,0 +1,27 @@
+{
+  "certificate_policy": {
+    "expected_spki_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "subject": "CN=unifi.example.internal",
+    "dns_sans": ["unifi.example.internal"],
+    "ip_sans": []
+  },
+  "opnsense": {
+    "base_url": "https://opnsense.example.internal",
+    "timeout_seconds": 30,
+    "tls_ca_name": "opnsense-tls-ca.pem"
+  },
+  "issuing_ca_description": "Internal issuing CA",
+  "certificate_description": "UniFi HTTPS certificate",
+  "trusted_ca_name": "unifi-issuing-ca.pem",
+  "lifetime_days": 30,
+  "digest": "sha384",
+  "live_tls": {
+    "address": "192.0.2.10",
+    "server_hostname": "unifi.example.internal",
+    "port": 8443,
+    "timeout_seconds": 60,
+    "attempt_timeout_seconds": 5,
+    "retry_delay_seconds": 0.5,
+    "max_attempts": 120
+  }
+}
