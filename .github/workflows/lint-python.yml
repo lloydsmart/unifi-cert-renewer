@@ -13,16 +13,6 @@ on:
       - 'requirements*.txt'
       - '.github/workflows/lint-python.yml'
 
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '**/*.py'
-      - 'pyproject.toml'
-      - 'requirements*.in'
-      - 'requirements*.txt'
-      - '.github/workflows/lint-python.yml'
-
 permissions:
   contents: read
 

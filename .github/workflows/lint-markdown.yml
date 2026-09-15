@@ -11,14 +11,6 @@ on:
       - '.markdownlint-cli2.jsonc'
       - '.github/workflows/lint-markdown.yml'
 
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '**/*.md'
-      - '.markdownlint-cli2.jsonc'
-      - '.github/workflows/lint-markdown.yml'
-
 permissions:
   contents: read
 
