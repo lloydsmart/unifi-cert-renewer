@@ -1,6 +1,8 @@
 name: Markdown lint
 
 on:
+  workflow_call:
+
   push:
     branches:
       - main
