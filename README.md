@@ -312,15 +312,14 @@ Secret scanning covers complete reachable Git history.
 Development should take place on feature or maintenance branches and be merged
 through pull requests.
 
-The `Pull request CI` workflow provides the stable `Required CI gate` check. Once
-that workflow exists on the default branch, every pull request receives the gate.
-It requires security scanning and the applicable Python tests, dependency-lock
-freshness, Ruff lint/format, Markdown lint, Actions lint, and deployment/container
-validation. Path-specific work is skipped only after changed-path detection, and
-the gate accepts that explicit non-applicable result while failing on failed,
-cancelled, or unexpected results. The gate becomes a merge requirement only when
-its observed check context is added to the `Protect main` repository ruleset.
-Renaming or removing it requires a corresponding ruleset update.
+The `Pull request CI` workflow gives every pull request to `main` the stable
+`Required CI gate`. The gate requires security scanning plus applicable Python
+tests and dependency-lock freshness, Ruff lint/format, Markdown lint, Actions
+lint, and deployment/container validation. Non-applicable path-specific jobs may
+be skipped only after relevance detection.
+The active `Protect main` repository ruleset now requires the
+`Required CI gate`; renaming or removing the gate requires a matching ruleset
+update.
 
 The optional repository commit guard can be enabled with:
 
