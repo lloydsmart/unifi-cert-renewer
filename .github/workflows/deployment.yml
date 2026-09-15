@@ -1,0 +1,247 @@
+name: Deployment CI
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Determine deployment relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.relevance.outputs.relevant }}
+
+    steps:
+      - name: Checkout complete repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Determine changed deployment inputs
+        id: relevance
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            printf '%s\n' 'relevant=true' >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            base=$PR_BASE
+            head=$PR_HEAD
+            diff_separator='...'
+          elif [[ "$EVENT_NAME" == 'push' ]]; then
+            if [[ "$PUSH_BEFORE" =~ ^0+$ ]]; then
+              printf '%s\n' 'Unable to determine a new-branch push base; running validation.'
+              printf '%s\n' 'relevant=true' >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            base=$PUSH_BEFORE
+            head=$PUSH_AFTER
+            diff_separator='..'
+          else
+            printf 'Unsupported event for relevance detection: %s\n' "$EVENT_NAME" >&2
+            exit 1
+          fi
+
+          git cat-file -e "${base}^{commit}"
+          git cat-file -e "${head}^{commit}"
+
+          changed_paths=$(mktemp)
+          trap 'rm -f -- "$changed_paths"' EXIT
+          git diff --name-only -z "$base$diff_separator$head" >"$changed_paths"
+
+          relevant=false
+          while IFS= read -r -d '' changed_path; do
+            case "$changed_path" in
+              deployment/* | src/* | scripts/*.sh | \
+                scripts/compare_container_vulnerabilities.py | \
+                scripts/validate_deployment.py | requirements.in | \
+                requirements.txt | .dockerignore | \
+                .github/workflows/deployment.yml | \
+                tests/test_validate_deployment.py)
+                relevant=true
+                break
+                ;;
+            esac
+          done <"$changed_paths"
+
+          printf 'Deployment validation relevant: %s\n' "$relevant"
+          printf 'relevant=%s\n' "$relevant" >>"$GITHUB_OUTPUT"
+
+  validate:
+    name: Validate deployment and containers
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RENEWER_IMAGE: local/unifi-cert-renewer-ci:${{ github.sha }}
+      UNIFI_IMAGE: local/unifi-network-application-cert-renewer-ci:${{ github.sha }}
+      UNIFI_TEST_UPSTREAM: lscr.io/linuxserver/unifi-network-application@sha256:274311cdf64294f217f74004571d214f605ca85ea01002a84bde9eaf5130e43a
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Syntax-check repository and s6 shell scripts
+        run: |
+          set -euo pipefail
+          command -v shellcheck
+          mapfile -d '' bash_scripts < <(
+            find scripts -maxdepth 1 -type f -name '*.sh' -print0 | sort -z
+          )
+          mapfile -d '' s6_scripts < <(
+            find deployment/unifi/root -type f -name run -print0 | sort -z
+          )
+          ((${#bash_scripts[@]} > 0))
+          ((${#s6_scripts[@]} > 0))
+          for script in "${bash_scripts[@]}"; do
+            bash -n "$script"
+          done
+          for script in "${s6_scripts[@]}"; do
+            sh -n "$script"
+          done
+          shellcheck --shell=bash "${bash_scripts[@]}"
+          shellcheck --shell=sh "${s6_scripts[@]}"
+
+      - name: Validate exact OPNsense ACL routes
+        run: python scripts/validate_deployment.py acl deployment/opnsense/ACL.xml
+
+      - name: Resolve and validate the Compose deployment shape
+        env:
+          RENEWER_IMAGE: local/unifi-cert-renewer:ci
+          RENEWER_SECRETS_DIRECTORY: /tmp/unifi-cert-renewer-ci-secrets
+          UNIFI_NETWORK: unifi-ci
+        run: |
+          set -euo pipefail
+          docker compose version
+          docker compose \
+            --file deployment/renewer/compose.example.yaml \
+            config --format json >"$RUNNER_TEMP/compose.json"
+          python scripts/validate_deployment.py compose "$RUNNER_TEMP/compose.json"
+
+      - name: Resolve exact upstream images
+        run: |
+          set -euo pipefail
+          upstream_output=$(awk '$1 == "FROM" { print $2 }' deployment/renewer/Dockerfile)
+          mapfile -t upstreams <<<"$upstream_output"
+          if [[ ${#upstreams[@]} -ne 1 ]] || \
+            [[ ! ${upstreams[0]} =~ ^python:3\.12-slim-bookworm@sha256:[0-9a-f]{64}$ ]]; then
+            printf '%s\n' 'Renewer Dockerfile must have one exact pinned Python upstream.' >&2
+            exit 1
+          fi
+          printf 'RENEWER_UPSTREAM=%s\n' "${upstreams[0]}" >>"$GITHUB_ENV"
+
+      - name: Pull exact upstream images
+        run: |
+          docker pull "$RENEWER_UPSTREAM"
+          docker pull "$UNIFI_TEST_UPSTREAM"
+
+      - name: Build production images without publishing
+        run: |
+          docker build \
+            --file deployment/renewer/Dockerfile \
+            --tag "$RENEWER_IMAGE" \
+            .
+          docker build \
+            --file deployment/unifi/Dockerfile \
+            --build-arg "UNIFI_IMAGE=$UNIFI_TEST_UPSTREAM" \
+            --tag "$UNIFI_IMAGE" \
+            .
+
+      - name: Assert renewer packaging boundary
+        run: |
+          set -euo pipefail
+          [[ $(docker image inspect --format '{{.Config.User}}' "$RENEWER_IMAGE") == '1000:1000' ]]
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --entrypoint /bin/sh \
+            "$RENEWER_IMAGE" \
+            -ceu '
+              test "$(id -u):$(id -g)" = "1000:1000"
+              test -f /opt/unifi-cert-renewer/src/unifi_executor_client.py
+              test -f /opt/unifi-cert-renewer/src/unifi_executor_service.py
+              test ! -e /opt/unifi-cert-renewer/src/unifi_executor.py
+              test ! -e /opt/unifi-cert-renewer/src/unifi_executor_files.py
+              test ! -e /opt/unifi-cert-renewer/src/unifi_process.py
+            '
+
+      - name: Assert UniFi executor overlay payload
+        run: |
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --entrypoint /bin/sh \
+            "$UNIFI_IMAGE" \
+            -ceu '
+              test -f /opt/unifi-cert-renewer/src/unifi_executor.py
+              test -f /opt/unifi-cert-renewer/src/unifi_executor_files.py
+              test -f /opt/unifi-cert-renewer/src/unifi_process.py
+              test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-recovery/run
+              test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-secure-state/run
+              test -x /etc/s6-overlay/s6-rc.d/svc-unifi-cert-renewer-executor/run
+            '
+
+      - name: Compare renewer vulnerabilities with exact upstream
+        run: ./scripts/scan-container.sh "$RENEWER_IMAGE" "$RENEWER_UPSTREAM"
+
+      - name: Compare UniFi vulnerabilities with exact upstream
+        run: ./scripts/scan-container.sh "$UNIFI_IMAGE" "$UNIFI_TEST_UPSTREAM"
+
+  # Issue #32 can require this stable job: it concludes even when validation is
+  # legitimately skipped, and fails closed on detection or validation failures.
+  gate:
+    name: Deployment CI gate
+    needs: [changes, validate]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require the appropriate deployment result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANGES_RESULT" != 'success' ]]; then
+            printf 'Deployment relevance detection ended with: %s\n' "$CHANGES_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$RELEVANT" == 'false' && "$VALIDATION_RESULT" == 'skipped' ]]; then
+            printf '%s\n' 'Deployment validation was not relevant; gate passed.'
+            exit 0
+          fi
+          if [[ "$RELEVANT" == 'true' && "$VALIDATION_RESULT" == 'success' ]]; then
+            printf '%s\n' 'Deployment validation passed; gate passed.'
+            exit 0
+          fi
+          printf 'Unexpected deployment result: relevant=%s validation=%s\n' \
+            "$RELEVANT" "$VALIDATION_RESULT" >&2
+          exit 1
