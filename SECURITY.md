@@ -41,10 +41,10 @@ Preserving that separation is the primary security objective of this project.
 ## Development Status
 
 The supervised renewal path, non-root renewer image, fixed Unix-socket executor,
-startup recovery, and live TLS finalisation are implemented. The first complete
-supervised production renewal succeeded on 2026-09-15. Threshold-based renewal,
-unattended scheduling, and release publication are not implemented, and there is
-no stable released artifact.
+startup recovery, live TLS finalisation, and signed-tag release pipeline are
+implemented. The first complete supervised production renewal succeeded on
+2026-09-15. Threshold-based renewal and unattended scheduling are not
+implemented, and no release artifact has been published yet.
 
 Security requirements documented here distinguish implemented controls from
 requirements for future work. A control is not described as implemented without
@@ -581,9 +581,7 @@ ID.
 
 ## Release Security
 
-Release publishing is not yet implemented.
-
-When introduced, release CI should preserve a verifiable relationship between:
+The release workflow preserves a verifiable relationship between:
 
 ```text
 GitHub release/tag
@@ -597,10 +595,17 @@ published artifact
 immutable artifact digest
 ```
 
-Creating or moving an ordinary branch must not automatically publish a
-production release.
+Only a protected `v*` tag push can invoke publication. The workflow requires a
+GitHub-verified signed annotated tag that directly targets a commit reachable
+from `main`. It builds each image once, validates and scans the exact local image
+ID, creates its SBOM from that image, pushes the same image, and verifies the
+published digest resolves to the tested Docker config identity. GitHub-native
+provenance and SBOM attestations bind the published digest to the workflow.
 
-Release tags matching `v*` should be immutable through repository rules.
+Release tags matching `v*` are immutable through repository rules. Ordinary
+branch pushes, pull requests, and manual workflow runs cannot publish. The
+operator procedure and the first-publication GHCR visibility check are in
+[`docs/releasing.md`](docs/releasing.md).
 
 ## Tests
 

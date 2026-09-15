@@ -72,10 +72,13 @@ jobs:
             case "$changed_path" in
               deployment/* | src/* | scripts/*.sh | \
                 scripts/compare_container_vulnerabilities.py | \
-                scripts/validate_deployment.py | requirements.in | \
+                scripts/validate_deployment.py | \
+                scripts/validate_release_tag.py | requirements.in | \
                 requirements.txt | .dockerignore | \
                 .github/workflows/deployment.yml | \
-                tests/test_validate_deployment.py)
+                .github/workflows/release.yml | \
+                tests/test_validate_deployment.py | \
+                tests/test_validate_release_tag.py)
                 relevant=true
                 break
                 ;;
@@ -168,43 +171,11 @@ jobs:
             --tag "$UNIFI_IMAGE" \
             .
 
-      - name: Assert renewer packaging boundary
-        run: |
-          set -euo pipefail
-          [[ $(docker image inspect --format '{{.Config.User}}' "$RENEWER_IMAGE") == '1000:1000' ]]
-          docker run --rm \
-            --network none \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --entrypoint /bin/sh \
-            "$RENEWER_IMAGE" \
-            -ceu '
-              test "$(id -u):$(id -g)" = "1000:1000"
-              test -f /opt/unifi-cert-renewer/src/unifi_executor_client.py
-              test -f /opt/unifi-cert-renewer/src/unifi_executor_service.py
-              test ! -e /opt/unifi-cert-renewer/src/unifi_executor.py
-              test ! -e /opt/unifi-cert-renewer/src/unifi_executor_files.py
-              test ! -e /opt/unifi-cert-renewer/src/unifi_process.py
-            '
-
-      - name: Assert UniFi executor overlay payload
-        run: |
-          docker run --rm \
-            --network none \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --entrypoint /bin/sh \
-            "$UNIFI_IMAGE" \
-            -ceu '
-              test -f /opt/unifi-cert-renewer/src/unifi_executor.py
-              test -f /opt/unifi-cert-renewer/src/unifi_executor_files.py
-              test -f /opt/unifi-cert-renewer/src/unifi_process.py
-              test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-recovery/run
-              test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-secure-state/run
-              test -x /etc/s6-overlay/s6-rc.d/svc-unifi-cert-renewer-executor/run
-            '
+      - name: Assert container packaging boundaries
+        run: >-
+          ./scripts/validate-container-packaging.sh
+          "$RENEWER_IMAGE"
+          "$UNIFI_IMAGE"
 
       - name: Compare renewer vulnerabilities with exact upstream
         run: ./scripts/scan-container.sh "$RENEWER_IMAGE" "$RENEWER_UPSTREAM"

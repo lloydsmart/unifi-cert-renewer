@@ -1,0 +1,439 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RENEWER_REPOSITORY: ghcr.io/lloydsmart/unifi-cert-renewer
+  SYFT_IMAGE: >-
+    ghcr.io/anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c
+  UNIFI_REPOSITORY: >-
+    ghcr.io/lloydsmart/unifi-network-application-cert-renewer
+  UNIFI_UPSTREAM: >-
+    lscr.io/linuxserver/unifi-network-application@sha256:274311cdf64294f217f74004571d214f605ca85ea01002a84bde9eaf5130e43a
+
+jobs:
+  publish:
+    name: Verify, build, validate, and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+      source_sha: ${{ steps.tag.outputs.source_sha }}
+      renewer_digest: ${{ steps.publish.outputs.renewer_digest }}
+      unifi_digest: ${{ steps.publish.outputs.unifi_digest }}
+
+    steps:
+      - name: Checkout complete tagged repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag syntax
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          prerelease=$(python3 scripts/validate_release_tag.py version "$RELEASE_TAG")
+          printf 'prerelease=%s\n' "$prerelease" >>"$GITHUB_OUTPUT"
+
+      - name: Verify signed annotated tag through GitHub
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ref_json="$RUNNER_TEMP/release-tag-ref.json"
+          tag_json="$RUNNER_TEMP/release-tag-object.json"
+
+          gh api \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >"$ref_json"
+          tag_object_sha=$(python3 scripts/validate_release_tag.py \
+            ref "$RELEASE_TAG" "$ref_json")
+
+          gh api \
+            "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha" >"$tag_json"
+          source_sha=$(python3 scripts/validate_release_tag.py \
+            tag "$RELEASE_TAG" "$tag_object_sha" "$tag_json")
+
+          git cat-file -e "${source_sha}^{commit}"
+          checked_out_sha=$(git rev-parse HEAD)
+          if [[ "$checked_out_sha" != "$source_sha" ]]; then
+            printf '%s\n' 'Checked-out source does not match the signed tag target.' >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$source_sha" origin/main; then
+            printf '%s\n' 'Release commit is not reachable from origin/main.' >&2
+            exit 1
+          fi
+
+          {
+            printf 'prerelease=%s\n' "$PRERELEASE"
+            printf 'release_tag=%s\n' "$RELEASE_TAG"
+            printf 'source_sha=%s\n' "$source_sha"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Syntax-check repository and s6 shell scripts
+        run: |
+          set -euo pipefail
+          command -v shellcheck
+          mapfile -d '' bash_scripts < <(
+            find scripts -maxdepth 1 -type f -name '*.sh' -print0 | sort -z
+          )
+          mapfile -d '' s6_scripts < <(
+            find deployment/unifi/root -type f -name run -print0 | sort -z
+          )
+          ((${#bash_scripts[@]} > 0))
+          ((${#s6_scripts[@]} > 0))
+          for script in "${bash_scripts[@]}"; do
+            bash -n "$script"
+          done
+          for script in "${s6_scripts[@]}"; do
+            sh -n "$script"
+          done
+          shellcheck --shell=bash "${bash_scripts[@]}"
+          shellcheck --shell=sh "${s6_scripts[@]}"
+
+      - name: Validate exact OPNsense ACL routes
+        run: python3 scripts/validate_deployment.py acl deployment/opnsense/ACL.xml
+
+      - name: Resolve and validate Compose deployment shape
+        env:
+          RENEWER_IMAGE: local/unifi-cert-renewer:ci
+          RENEWER_SECRETS_DIRECTORY: /tmp/unifi-cert-renewer-ci-secrets
+          UNIFI_NETWORK: unifi-ci
+        run: |
+          set -euo pipefail
+          docker compose \
+            --file deployment/renewer/compose.example.yaml \
+            config --format json >"$RUNNER_TEMP/compose.json"
+          python3 scripts/validate_deployment.py compose "$RUNNER_TEMP/compose.json"
+
+      - name: Resolve exact renewer upstream
+        run: |
+          set -euo pipefail
+          upstream_output=$(awk '$1 == "FROM" { print $2 }' \
+            deployment/renewer/Dockerfile)
+          mapfile -t upstreams <<<"$upstream_output"
+          if [[ ${#upstreams[@]} -ne 1 ]] || \
+            [[ ! ${upstreams[0]} =~ ^python:3\.14-slim-bookworm@sha256:[0-9a-f]{64}$ ]]; then
+            printf '%s\n' 'Renewer Dockerfile must have one exact pinned Python upstream.' >&2
+            exit 1
+          fi
+          printf 'RENEWER_UPSTREAM=%s\n' "${upstreams[0]}" >>"$GITHUB_ENV"
+
+      - name: Pull exact upstream and tooling images
+        run: |
+          set -euo pipefail
+          docker pull "$RENEWER_UPSTREAM"
+          docker pull "$UNIFI_UPSTREAM"
+          docker pull "$SYFT_IMAGE"
+
+      - name: Build exact release images once
+        id: build
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          renewer_image="local/unifi-cert-renewer-release:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          unifi_image="local/unifi-network-application-cert-renewer-release:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          source_url="https://github.com/$GITHUB_REPOSITORY"
+
+          docker build \
+            --file deployment/renewer/Dockerfile \
+            --label "org.opencontainers.image.source=$source_url" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --tag "$renewer_image" \
+            .
+          docker build \
+            --file deployment/unifi/Dockerfile \
+            --build-arg "UNIFI_IMAGE=$UNIFI_UPSTREAM" \
+            --label "org.opencontainers.image.source=$source_url" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --tag "$unifi_image" \
+            .
+
+          renewer_id=$(docker image inspect --format '{{.Id}}' "$renewer_image")
+          unifi_id=$(docker image inspect --format '{{.Id}}' "$unifi_image")
+          for image_id in "$renewer_id" "$unifi_id"; do
+            [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          done
+          {
+            printf 'renewer_image=%s\n' "$renewer_image"
+            printf 'renewer_id=%s\n' "$renewer_id"
+            printf 'unifi_image=%s\n' "$unifi_image"
+            printf 'unifi_id=%s\n' "$unifi_id"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Assert OCI release metadata
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+          RENEWER_ID: ${{ steps.build.outputs.renewer_id }}
+          UNIFI_ID: ${{ steps.build.outputs.unifi_id }}
+        run: |
+          set -euo pipefail
+          source_url="https://github.com/$GITHUB_REPOSITORY"
+          for image_id in "$RENEWER_ID" "$UNIFI_ID"; do
+            [[ $(docker image inspect --format \
+              '{{ index .Config.Labels "org.opencontainers.image.source" }}' \
+              "$image_id") == "$source_url" ]]
+            [[ $(docker image inspect --format \
+              '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+              "$image_id") == "$SOURCE_SHA" ]]
+            [[ $(docker image inspect --format \
+              '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+              "$image_id") == "$RELEASE_TAG" ]]
+          done
+
+      - name: Assert container packaging boundaries
+        env:
+          RENEWER_ID: ${{ steps.build.outputs.renewer_id }}
+          UNIFI_ID: ${{ steps.build.outputs.unifi_id }}
+        run: >-
+          ./scripts/validate-container-packaging.sh
+          "$RENEWER_ID"
+          "$UNIFI_ID"
+
+      - name: Compare renewer vulnerabilities with exact upstream
+        env:
+          RENEWER_ID: ${{ steps.build.outputs.renewer_id }}
+        run: ./scripts/scan-container.sh "$RENEWER_ID" "$RENEWER_UPSTREAM"
+
+      - name: Compare UniFi vulnerabilities with exact upstream
+        env:
+          UNIFI_ID: ${{ steps.build.outputs.unifi_id }}
+        run: ./scripts/scan-container.sh "$UNIFI_ID" "$UNIFI_UPSTREAM"
+
+      - name: Generate SPDX JSON SBOMs from exact tested images
+        env:
+          RENEWER_ID: ${{ steps.build.outputs.renewer_id }}
+          UNIFI_ID: ${{ steps.build.outputs.unifi_id }}
+        run: |
+          set -euo pipefail
+          archive_directory="$RUNNER_TEMP/release-image-archives"
+          output_directory="$RUNNER_TEMP/release-sboms"
+          work_directory="$RUNNER_TEMP/release-syft-work"
+          mkdir -- "$archive_directory" "$output_directory" "$work_directory"
+
+          generate_sbom() {
+            local image_id=$1
+            local archive_name=$2
+            local output_name=$3
+            local archive="$archive_directory/$archive_name"
+            local work="$work_directory/$archive_name"
+            mkdir -- "$work"
+            docker save --output "$archive" "$image_id"
+            docker run --rm \
+              --network none \
+              --read-only \
+              --cap-drop ALL \
+              --security-opt no-new-privileges:true \
+              --user "$(id -u):$(id -g)" \
+              --env HOME=/tmp \
+              --env TMPDIR=/tmp \
+              --env SYFT_CHECK_FOR_APP_UPDATE=false \
+              --mount "type=bind,src=$work,dst=/tmp" \
+              --mount "type=bind,src=$archive,dst=/archive/image.tar,readonly" \
+              --mount "type=bind,src=$output_directory,dst=/output" \
+              "$SYFT_IMAGE" \
+              'docker-archive:/archive/image.tar' \
+              --output "spdx-json=/output/$output_name"
+          }
+
+          generate_sbom \
+            "$RENEWER_ID" renewer.tar unifi-cert-renewer.spdx.json
+          generate_sbom \
+            "$UNIFI_ID" unifi.tar \
+            unifi-network-application-cert-renewer.spdx.json
+
+          for sbom in "$output_directory"/*.spdx.json; do
+            [[ -s "$sbom" ]]
+            [[ $(stat --format '%s' "$sbom") -le 16777216 ]]
+            python3 -m json.tool "$sbom" >/dev/null
+          done
+
+      - name: Authenticate to GHCR with the workflow token
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" \
+            --password-stdin
+
+      - name: Publish or reuse exact tested images and verify registry identity
+        id: publish
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
+          RENEWER_ID: ${{ steps.build.outputs.renewer_id }}
+          UNIFI_ID: ${{ steps.build.outputs.unifi_id }}
+        run: |
+          set -euo pipefail
+          renewer_digest=$(./scripts/publish-release-image.sh \
+            "$RENEWER_ID" "$RENEWER_REPOSITORY" "$RELEASE_TAG")
+          unifi_digest=$(./scripts/publish-release-image.sh \
+            "$UNIFI_ID" "$UNIFI_REPOSITORY" "$RELEASE_TAG")
+          for digest in "$renewer_digest" "$unifi_digest"; do
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          done
+          {
+            printf 'renewer_digest=%s\n' "$renewer_digest"
+            printf 'unifi_digest=%s\n' "$unifi_digest"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Attest renewer build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.RENEWER_REPOSITORY }}
+          subject-digest: ${{ steps.publish.outputs.renewer_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest renewer SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.RENEWER_REPOSITORY }}
+          subject-digest: ${{ steps.publish.outputs.renewer_digest }}
+          sbom-path: ${{ runner.temp }}/release-sboms/unifi-cert-renewer.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest UniFi derivative build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.UNIFI_REPOSITORY }}
+          subject-digest: ${{ steps.publish.outputs.unifi_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest UniFi derivative SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.UNIFI_REPOSITORY }}
+          subject-digest: ${{ steps.publish.outputs.unifi_digest }}
+          sbom-path: >-
+            ${{ runner.temp }}/release-sboms/unifi-network-application-cert-renewer.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Stage release SBOM assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sboms
+          path: ${{ runner.temp }}/release-sboms/*.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove GHCR credentials
+        if: always()
+        run: docker logout ghcr.io || true
+
+  release:
+    name: Create GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download exact SBOM assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sboms
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Validate release assets
+        run: |
+          set -euo pipefail
+          asset_directory="$RUNNER_TEMP/release-assets"
+          mapfile -t assets < <(find "$asset_directory" -maxdepth 1 \
+            -type f -name '*.spdx.json' -printf '%f\n' | sort)
+          expected=(
+            unifi-cert-renewer.spdx.json
+            unifi-network-application-cert-renewer.spdx.json
+          )
+          [[ ${#assets[@]} -eq ${#expected[@]} ]]
+          [[ ${assets[0]} == "${expected[0]}" ]]
+          [[ ${assets[1]} == "${expected[1]}" ]]
+          for asset in "${assets[@]}"; do
+            python3 -m json.tool "$asset_directory/$asset" >/dev/null
+          done
+
+      - name: Create release after all publication checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+          RENEWER_DIGEST: ${{ needs.publish.outputs.renewer_digest }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+          UNIFI_DIGEST: ${{ needs.publish.outputs.unifi_digest }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          markdown_quote=$(printf '\x60')
+          markdown_fence="${markdown_quote}${markdown_quote}${markdown_quote}"
+          {
+            printf 'Release tag: %s%s%s\n\n' \
+              "$markdown_quote" "$RELEASE_TAG" "$markdown_quote"
+            printf 'Source commit: %s%s%s\n\n' \
+              "$markdown_quote" "$SOURCE_SHA" "$markdown_quote"
+            printf '%s\n\n' 'Published images:'
+            printf -- '- %s%s@%s%s\n' \
+              "$markdown_quote" "$RENEWER_REPOSITORY" \
+              "$RENEWER_DIGEST" "$markdown_quote"
+            printf -- '- %s%s@%s%s\n\n' \
+              "$markdown_quote" "$UNIFI_REPOSITORY" \
+              "$UNIFI_DIGEST" "$markdown_quote"
+            printf '%s\n\n' 'Pull the immutable images:'
+            printf '%sbash\n' "$markdown_fence"
+            printf 'docker pull %s@%s\n' \
+              "$RENEWER_REPOSITORY" "$RENEWER_DIGEST"
+            printf 'docker pull %s@%s\n' \
+              "$UNIFI_REPOSITORY" "$UNIFI_DIGEST"
+            printf '%s\n\n' "$markdown_fence"
+            printf '%s\n' \
+              'Production deployment must use these immutable digest references,' \
+              'not the version tags.'
+          } >"$notes"
+
+          release_arguments=(
+            "$RELEASE_TAG"
+            "$RUNNER_TEMP/release-assets/unifi-cert-renewer.spdx.json"
+            "$RUNNER_TEMP/release-assets/unifi-network-application-cert-renewer.spdx.json"
+            --title "$RELEASE_TAG"
+            --notes-file "$notes"
+            --verify-tag
+          )
+          if [[ "$PRERELEASE" == 'true' ]]; then
+            release_arguments+=(--prerelease)
+          elif [[ "$PRERELEASE" != 'false' ]]; then
+            printf 'Invalid prerelease state: %q\n' "$PRERELEASE" >&2
+            exit 1
+          fi
+          gh release create "${release_arguments[@]}"
