@@ -1,4 +1,11 @@
-# First supervised production renewal
+# Supervised production acceptance renewal
+
+This is the acceptance procedure for the first production deployment and for a
+materially changed build or deployment whose renewal path must be requalified.
+It can be repeated when qualifying such changes. A routine supervised renewal
+does not necessarily repeat the build, scan, derivative deployment, restart, or
+deliberately unused `prepare` certificate steps below. Threshold decisions,
+scheduling, and automatic retries are not part of this procedure.
 
 1. Record the current public keystore inspection, leaf fingerprint, chain, and
    SPKI. Confirm the expected SPKI matches configuration. Do not export the
@@ -6,16 +13,21 @@
 2. Confirm `.cert-renewer-journal`, `.cert-renewer-journal-new`,
    `.cert-renewer-stage`, and `.cert-renewer-rollback` are absent from
    `/config/data`. Preserve the normal protected appdata backup/recovery reference.
-3. Record the tested derivative image's registry digest and confirm the UniFi
-   deployment references that exact digest, not a mutable tag. Restart the
-   derivative UniFi container under supervision. Confirm the recovery
+3. For a released deployment, record the tested derivative image's registry
+   digest and confirm the UniFi deployment references that exact digest, not a
+   mutable tag. During explicitly supervised pre-release validation, record and
+   verify the exact local image ID instead; do not present it as a portable
+   registry reference. Restart the derivative UniFi container under supervision.
+   Confirm the recovery
    oneshot reports `no_active_transaction`, the post-init ownership hook succeeds,
    Java becomes ready afterward, and
    `/run/unifi-cert-renewer/executor.sock` is `root:<dedicated-group>` mode `0660`
    beneath a root-owned `0750` directory.
-4. Build, scan, push, and record the dedicated renewer image digest as described
-   in [`production-deployment.md`](production-deployment.md). Inspect the
-   resolved Compose definition. Confirm uid/gid `1000:1000`, supplemental gid
+4. Build and scan the dedicated renewer image as described in
+   [`production-deployment.md`](production-deployment.md). Record its registry
+   digest for a released deployment or its exact local image ID for supervised
+   pre-release validation. Inspect the resolved Compose definition. Confirm
+   uid/gid `1000:1000`, supplemental gid
    `984`, and only the shared runtime and renewer-secrets mounts. Confirm it has
    no `/config`, UniFi keystore-password secret, Docker socket, capabilities, or
    restart loop.
@@ -58,6 +70,11 @@
    `renewal_complete` only after final cleanup.
 11. Re-inspect the live endpoint and public keystore. Confirm the served leaf,
    chain, and original SPKI, and confirm all four recovery artifacts are absent.
+12. Remove unused OPNsense certificate records created by supervised `prepare`
+    passes or failed attempts. Perform this as a separate operator cleanup using
+    an appropriately authorized administrative path; the renewer's narrow ACL
+    deliberately has no delete privilege. Confirm the successfully installed
+    certificate record is retained.
 
 If the executor fails closed, stop. Do not delete/edit transaction files, force
 Java up, re-sign, or re-import. Preserve the bounded diagnostic and current file
@@ -67,3 +84,32 @@ metadata, keep the appdata backup available, and review the journal/state agains
 Unattended scheduling, threshold checks, automatic retries, and general
 daemonisation remain out of scope. Each command above is a separate manual
 one-shot invocation.
+
+## First production execution evidence
+
+The procedure completed successfully on 2026-09-15 using merged source commit
+`8f8b90e70e0844ae2ff821710a49d07efb7cef59`. The supervised pre-release
+deployment recorded exact local image IDs, not registry digests:
+
+* renewer:
+  `sha256:98fb1e1f222e19ac37148ebb17fc861f025830fa8dc6344c37be4ca0f2c9678c`
+* UniFi derivative:
+  `sha256:a7e8d8805f637b77dcd983e8f103208b5e5b80f5acecf2e6d8b1ef6bed32649c`
+
+The run returned `renewal_complete=true` for issued leaf serial `16`. The issued,
+installed, and independently observed live leaf shared SHA-256
+`e0272e24b5aba8723ea679f8b45cf5a225bc05daa90ffc3e826de2e600f94346`.
+The SPKI SHA-256 remained
+`95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`.
+Independent CA- and hostname-verified live TLS inspection connected to the then
+observed `172.26.0.3:8443`, authenticated `unifi-mgmt.lloydsmart.com`, and
+matched the installed leaf exactly. That observed address is execution evidence,
+not a safe configuration default; future runs require an operator-controlled
+stable numeric address. After finalisation, the keystore remained mode `0600`
+and ownership `1000:1000`, and `.cert-renewer-journal`,
+`.cert-renewer-journal-new`, `.cert-renewer-stage`, and
+`.cert-renewer-rollback` were absent.
+
+Post-run cleanup of unused OPNsense certificate records from supervised
+preparation and failed attempts must use a separate administrative path; the
+renewal ACL must not be broadened for cleanup.

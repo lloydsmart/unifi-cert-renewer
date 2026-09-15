@@ -40,12 +40,15 @@ Preserving that separation is the primary security objective of this project.
 
 ## Development Status
 
-The project is currently under initial development and has no stable released
-implementation.
+The supervised renewal path, non-root renewer image, fixed Unix-socket executor,
+startup recovery, and live TLS finalisation are implemented. The first complete
+supervised production renewal succeeded on 2026-09-15. Threshold-based renewal,
+unattended scheduling, and release publication are not implemented, and there is
+no stable released artifact.
 
-Security requirements documented here describe the baseline that future
-implementation must satisfy. Documentation must not imply that a control has
-already been implemented until corresponding code and tests exist.
+Security requirements documented here distinguish implemented controls from
+requirements for future work. A control is not described as implemented without
+corresponding code, tests, or documented production evidence.
 
 ## Reporting a Vulnerability
 
@@ -243,8 +246,11 @@ application.
 Do not grant broad administrative permissions when a narrower ACL can perform
 the required certificate-signing operations.
 
-The final required ACL should be documented and tested against the specific
-OPNsense API routes used by the implementation.
+The production identity uses the three-route custom ACL documented in
+[`deployment/opnsense/ACL.xml`](deployment/opnsense/ACL.xml). It permits CA
+listing, CSR signing, and retrieval of the issued public CRT. It does not permit
+certificate deletion, private-key or PKCS#12 export, arbitrary or broader
+certificate-store export or management, or generic Trust API access.
 
 ## UniFi Access and Orchestration
 
@@ -344,7 +350,8 @@ writers during a transaction.
 The fixed local protocol is the only supported mechanism for requesting CSR
 generation, installation, recovery, and finalisation.
 
-A future renewer container must not receive unrestricted Docker daemon access.
+The production renewer container must not receive unrestricted Docker daemon
+access.
 
 Do not mount:
 
@@ -530,23 +537,47 @@ publication.
 
 ## Container Security
 
-Container packaging is not yet implemented.
+Container packaging is implemented for a dedicated non-root one-shot renewer and
+a narrowly scoped executor overlay in the UniFi image. The renewer runs as
+uid/gid `1000:1000`, uses a read-only root filesystem, drops all capabilities,
+sets `no-new-privileges`, exposes no inbound listener, and has no restart loop.
+It receives only its read-only configuration/secret directory and the shared
+runtime directory for the fixed Unix socket, plus membership in the dedicated
+socket group. It does not receive UniFi appdata, the UniFi keystore-password
+secret, the executor implementation, or the Docker socket.
 
-When added, the intended baseline is:
+The image and Compose example implement these container hardening controls:
 
 * non-root runtime user;
-* read-only root filesystem where practical;
-* dropped Linux capabilities;
+* a read-only root filesystem with a bounded, `noexec`, `nosuid`, and `nodev`
+  `/tmp` tmpfs;
+* all Linux capabilities dropped;
 * `no-new-privileges`;
-* no inbound port unless the design genuinely requires one;
+* no inbound port;
 * no Docker socket;
-* read-only configuration and secret mounts;
-* narrowly restricted network egress;
-* image vulnerability scanning;
-* reviewed release images rather than automatically tracking mutable tags.
+* read-only configuration and secret mounts.
 
-Production deployment should prefer an immutable OCI digest once container
-publishing exists.
+The Compose example attaches the renewer to an operator-controlled external
+network so it can reach the stable numeric UniFi live-TLS address. That network
+attachment does not itself restrict egress, and neither the image nor the
+Compose example implements an egress firewall.
+
+Operators should separately restrict network access, as far as practical, to
+the configured OPNsense HTTPS service and the numeric UniFi live-TLS endpoint.
+The OPNsense base URL may use a DNS hostname, so deployments using one must also
+permit the required DNS resolution through operator-controlled infrastructure.
+This egress hardening is a recommendation, not an implemented or
+production-proven project control.
+
+The pinned container scanner supports comparison of a derivative image against
+the exact reviewed upstream. Derivative-only HIGH or CRITICAL findings are
+blockers; inherited findings require impact review and must not be silently
+ignored.
+
+Supervised pre-release validation may identify local builds by exact image ID.
+Once container publishing exists, released production deployment must use the
+reviewed registry digest rather than a mutable tag or non-portable local image
+ID.
 
 ## Release Security
 

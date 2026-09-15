@@ -22,5 +22,12 @@ services:
         source: ${RENEWER_SECRETS_DIRECTORY:?set RENEWER_SECRETS_DIRECTORY}
         target: /run/secrets
         read_only: true
+    networks:
+      - unifi
     command:
       - inspect
+
+networks:
+  unifi:
+    external: true
+    name: ${UNIFI_NETWORK:?set UNIFI_NETWORK to the operator-controlled shared network}

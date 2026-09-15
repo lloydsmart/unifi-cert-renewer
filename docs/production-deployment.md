@@ -1,4 +1,4 @@
-# Production executor deployment
+# Production deployment
 
 ## Topology and trust boundary
 
@@ -18,24 +18,30 @@ a mutable tag. The repository's deny-by-default `.dockerignore` keeps unrelated
 workspace files, Git data, local secrets, and certificate/keystore artifacts out
 of the Docker build context.
 
-After the image passes the deployment checks, record its registry digest and
-deploy that exact derivative digest rather than its build tag:
+After a published image passes the deployment checks, record its registry digest
+and deploy that exact derivative digest rather than its build tag:
 
 ```bash
 docker image inspect --format '{{index .RepoDigests 0}}' \
   local/unifi-network-application-cert-renewer:reviewed
 ```
 
-If the image has not yet been pushed to a registry, the local image ID is useful
-build evidence but is not a portable deployment reference. Push through the
-normal controlled release path, record the resulting digest, and use that digest
-for the supervised deployment.
+If the image has not yet been pushed to a registry, its exact local image ID is
+useful evidence for explicitly supervised pre-release validation, as it was for
+the first production renewal. It is not a portable deployment reference. A
+proper released deployment must publish through the controlled release path,
+record the resulting registry digest, and deploy that digest.
 
 Create one host runtime directory using a dedicated unused numeric group ID:
 
 ```bash
 install -d -o root -g 984 -m 0750 /run/unifi-cert-renewer
 ```
+
+`/run` is ephemeral on hosts such as Unraid. Recreate this directory during every
+host boot, before either container starts, with ownership
+`root:<dedicated-group>` and exact mode `0750`. Do not rely on a directory made by
+a previous boot or allow a container to create it with image-default ownership.
 
 Bind-mount that directory at `/run/unifi-cert-renewer` in both the UniFi and
 renewer containers. Add only the renewer process to supplemental group `984`.
@@ -67,7 +73,9 @@ The Dockerfile pins the reviewed multi-platform manifest for the minimal
 official `python:3.12-slim-bookworm` base and installs the hash-locked runtime
 requirements. If that pin is intentionally updated, review the new upstream
 image and record the replacement digest. After pushing the reviewed image,
-deploy its registry digest rather than the local tag.
+deploy its registry digest rather than the local tag. Before publication, an
+exact local image ID may identify a supervised validation build, but it is not a
+substitute for the registry digest required by a released deployment.
 
 The image runs as uid/gid `1000:1000`. It packages only renewer orchestration,
 certificate/CSR/TLS code, the OPNsense client, and the client half of the fixed
@@ -76,7 +84,9 @@ operations, UniFi process control, or recovery implementation.
 
 [`deployment/renewer/compose.example.yaml`](../deployment/renewer/compose.example.yaml)
 is the production-shape example. Set `RENEWER_IMAGE` to the reviewed registry
-digest and `RENEWER_SECRETS_DIRECTORY` to the host directory described below.
+digest, `RENEWER_SECRETS_DIRECTORY` to the host directory described below, and
+`UNIFI_NETWORK` to the existing operator-controlled Docker network that carries
+the stable numeric UniFi address.
 The service is read-only, drops every capability, enables
 `no-new-privileges`, has no restart policy, and receives only:
 
@@ -108,8 +118,13 @@ The fixed files are:
 Start from
 [`renewer-config.example.json`](../deployment/renewer/renewer-config.example.json),
 replace every example identity and fingerprint, and keep the exact JSON field
-set. `live_tls.address` must be a numeric address; `server_hostname` is the
-independently verified DNS or IP identity. Arbitrary paths, aliases, commands,
+set. `live_tls.address` must be a numeric address and must remain stable across
+UniFi container recreation; `server_hostname` is the independently verified DNS
+or IP identity. An ephemeral Docker bridge address is not a safe production
+configuration because recreation can silently move the intended service. Assign
+a static address on the shared Docker network, or use an equivalent
+operator-controlled stable numeric address, and keep normal TLS identity
+verification against `server_hostname`. Arbitrary paths, aliases, commands,
 executables, services, and socket paths are not configurable.
 
 Before use, inspect the resolved Compose definition and image identity:
@@ -120,8 +135,9 @@ docker image inspect --format '{{.Config.User}}' "$RENEWER_IMAGE"
 ```
 
 The expected image user is `1000:1000`. The resolved definition must show gid
-`984` and only the runtime and renewer-secrets mounts. It must not show
-`/config`, `unifi-keystore-password`, or `/var/run/docker.sock`.
+`984`, the external shared network, and only the runtime and renewer-secrets
+mounts. It must not show `/config`, `unifi-keystore-password`, or
+`/var/run/docker.sock`.
 
 ## s6 startup ordering
 
@@ -216,6 +232,26 @@ not edit the journal or delete rollback artifacts merely to make startup pass.
 
 Threshold policy and unattended scheduling are not implemented by issue #17.
 
+## OPNsense least-privilege ACL
+
+[`deployment/opnsense/ACL.xml`](../deployment/opnsense/ACL.xml) is the custom
+OPNsense MVC ACL model used by the production API identity. OPNsense does not
+ship this project-specific `LloydSmart/CertificateRenewer` namespace by default.
+On the proven deployment, the file is installed at:
+
+```text
+/usr/local/opnsense/mvc/app/models/LloydSmart/CertificateRenewer/ACL/ACL.xml
+```
+
+The ACL permits only CA listing through `api/trust/cert/ca_list`, CSR signing
+through `api/trust/cert/add`, and retrieval of the issued public CRT through
+`api/trust/cert/generate_file/*/crt`. It does not permit certificate deletion,
+private-key or PKCS#12 export, arbitrary or broader certificate-store export or
+management, or generic Trust API access. Cleanup of unused certificate records
+from supervised preparation or failed attempts requires a separate
+operator-authorized administrative path; do not broaden the renewer ACL for that
+task.
+
 ## Disposable boot evidence
 
 The issue #17 review fixes were exercised on 2026-09-12 using LinuxServer
@@ -267,11 +303,20 @@ second prints the Java executable target, and the third prints `(True, False)`.
 These commands do not request a CSR, sign, install, restart UniFi, or access
 private-key material.
 
-The pinned Trivy `0.74.0` scan reported 31 fixable findings (6 CRITICAL and 25
-HIGH) in the exact reviewed upstream UniFi image: 23 in upstream Java libraries
-and 8 in its `pebble` binary. Comparison against that exact upstream is required.
-HIGH/CRITICAL findings introduced by the derivative are blockers. Findings
-inherited unchanged from the exact reviewed upstream are not automatically
-blockers unless review shows that they materially undermine the executor or
-keystore trust boundary. Record both the comparison and that impact review; do
-not suppress or silently discard inherited findings.
+Compare every derivative scan against the exact reviewed upstream image, not a
+mutable tag or a scan from a different upstream revision. Any HIGH or CRITICAL
+finding introduced by the derivative is a blocker. Findings inherited unchanged
+from that exact upstream require an impact review, especially for the executor
+and keystore trust boundary, but must not be suppressed or silently ignored.
+Record the comparison and review rather than copying absolute finding counts that
+will become stale.
+
+## First production execution
+
+The first complete supervised production renewal succeeded on 2026-09-15 using
+merged source commit `8f8b90e70e0844ae2ff821710a49d07efb7cef59` and exact
+pre-release local image IDs. That run proves the documented signing,
+installation, live-verification, and finalisation path; it does not turn those
+local IDs into registry release references and does not implement threshold or
+scheduled renewal. The detailed evidence is recorded in
+[`first-production-renewal.md`](first-production-renewal.md#first-production-execution-evidence).

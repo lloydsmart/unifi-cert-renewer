@@ -1,0 +1,13 @@
+<acl>
+    <page-api-certificate-renewer>
+        <name>API: Certificate Renewer</name>
+        <description>
+            Allow CSR signing and public certificate retrieval for certificate renewal
+        </description>
+        <patterns>
+            <pattern>api/trust/cert/add</pattern>
+            <pattern>api/trust/cert/ca_list</pattern>
+            <pattern>api/trust/cert/generate_file/*/crt</pattern>
+        </patterns>
+    </page-api-certificate-renewer>
+</acl>

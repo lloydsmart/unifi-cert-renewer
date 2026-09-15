@@ -292,9 +292,10 @@ Temurin OpenJDK 25.0.4 during implementation. Run them with a local test JDK:
 UNIFI_TEST_KEYTOOL=/path/to/test-jdk/bin/keytool .venv/bin/pytest -q
 ```
 
-No production keystore was touched. Tests do not simulate actual host power loss,
-storage firmware failure, or privileged hostile mutation. Filesystem durability
-assumes the local filesystem and storage honor successful fsync calls.
+The automated tests did not touch a production keystore. They do not simulate
+actual host power loss, storage firmware failure, or privileged hostile mutation.
+Filesystem durability assumes the local filesystem and storage honor successful
+fsync calls.
 Public-state checks do not extract private keys to test possession;
 existing PrivateKeyEntry structure, CSR proof-of-possession, staged import and
 exact public-key continuity provide the available evidence.
@@ -305,5 +306,6 @@ source and tests, including real disposable loopback TLS servers. Generated TLS
 server keys in tests are loaded through Linux memory-backed file descriptors and
 never receive a filesystem pathname. Persistent recovery identity across an
 ambiguous remount/reboot remains an intentional operator-recovery case.
-Threshold renewal, general renewer-container packaging, scheduling, and key
-rotation remain later work.
+The complete executor path, live verification, and finalisation succeeded in the
+first supervised production renewal on 2026-09-15. Threshold renewal,
+unattended scheduling, release publication, and key rotation remain later work.
