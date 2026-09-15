@@ -147,7 +147,7 @@ jobs:
           upstream_output=$(awk '$1 == "FROM" { print $2 }' deployment/renewer/Dockerfile)
           mapfile -t upstreams <<<"$upstream_output"
           if [[ ${#upstreams[@]} -ne 1 ]] || \
-            [[ ! ${upstreams[0]} =~ ^python:3\.12-slim-bookworm@sha256:[0-9a-f]{64}$ ]]; then
+            [[ ! ${upstreams[0]} =~ ^python:3\.14-slim-bookworm@sha256:[0-9a-f]{64}$ ]]; then
             printf '%s\n' 'Renewer Dockerfile must have one exact pinned Python upstream.' >&2
             exit 1
           fi

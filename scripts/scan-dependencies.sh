@@ -6,13 +6,13 @@ repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repository_root"
 
 if ! command -v python >/dev/null 2>&1; then
-    printf '%s\n' 'Python 3.12 is required but python is not available on PATH.' >&2
+    printf '%s\n' 'Python 3.14 is required but python is not available on PATH.' >&2
     exit 1
 fi
 
 python_version=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [[ "$python_version" != '3.12' ]]; then
-    printf 'Python 3.12 is required; found Python %s.\n' "$python_version" >&2
+if [[ "$python_version" != '3.14' ]]; then
+    printf 'Python 3.14 is required; found Python %s.\n' "$python_version" >&2
     exit 1
 fi
 

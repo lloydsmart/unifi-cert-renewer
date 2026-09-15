@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly trivy_image='ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969'
-readonly comparator_image='python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254'
+readonly comparator_image='python:3.14-slim-bookworm@sha256:9ab8d9c8514b44f90cf0029dd42fdd7e9e211e639c8b995304cc04568dee900f'
 
 if [[ $# -ne 2 || -z $1 || $1 == -* || -z $2 || $2 == -* ]]; then
     printf 'Usage: %s DERIVATIVE_IMAGE EXACT_UPSTREAM_IMAGE\n' "$0" >&2
