@@ -17,3 +17,14 @@ updates:
       interval: weekly
     labels: [dependencies, ci]
     open-pull-requests-limit: 10
+
+  - package-ecosystem: docker
+    directory: /deployment/renewer
+    schedule:
+      interval: weekly
+    labels: [dependencies, docker]
+    open-pull-requests-limit: 10
+
+# deployment/unifi/Dockerfile uses ARG UNIFI_IMAGE followed by FROM ${UNIFI_IMAGE}.
+# Dependabot does not update Docker images referenced through ARG, so the reviewed
+# test baseline remains explicitly digest-pinned in deployment CI.
