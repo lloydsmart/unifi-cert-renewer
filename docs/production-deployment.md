@@ -31,6 +31,8 @@ useful evidence for explicitly supervised pre-release validation, as it was for
 the first production renewal. It is not a portable deployment reference. A
 proper released deployment must publish through the controlled release path,
 record the resulting registry digest, and deploy that digest.
+See [`releasing.md`](releasing.md) for signed-tag publication, digest and
+attestation verification, and the first-publication GHCR visibility check.
 
 Create one host runtime directory using a dedicated unused numeric group ID:
 

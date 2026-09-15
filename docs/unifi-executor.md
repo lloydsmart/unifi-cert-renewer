@@ -308,4 +308,5 @@ never receive a filesystem pathname. Persistent recovery identity across an
 ambiguous remount/reboot remains an intentional operator-recovery case.
 The complete executor path, live verification, and finalisation succeeded in the
 first supervised production renewal on 2026-09-15. Threshold renewal,
-unattended scheduling, release publication, and key rotation remain later work.
+unattended scheduling, the first release, and key rotation remain later work;
+the signed-tag publication pipeline is implemented.

@@ -22,8 +22,9 @@ validation, narrow OPNsense signing, issued-certificate validation, guarded
 installation, live verification, the fixed Unix-socket executor boundary, and
 non-root one-shot container packaging are represented by code and tests.
 
-Threshold-based renewal, unattended scheduling, CA rollover, and release
-publication are not implemented.
+Threshold-based renewal, unattended scheduling, and CA rollover are not
+implemented. The signed-tag release pipeline is implemented, but no release has
+been published yet.
 
 Do not assume an interface, container layout, command, file path, keystore
 format, or UniFi implementation detail has been validated unless it is
@@ -43,8 +44,8 @@ The implementation stages are:
 7. Live post-install verification — implemented and production-proven under
    supervision.
 8. Threshold-based unattended renewal — not implemented.
-9. Non-root one-shot container packaging — implemented; unattended scheduling
-   and release publication are not implemented.
+9. Non-root one-shot container packaging and signed-tag release publication —
+   implemented; unattended scheduling and the first release are not completed.
 
 Destructive or state-changing stages must not be introduced before their
 read-only prerequisites are testable.

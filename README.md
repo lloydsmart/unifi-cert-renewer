@@ -80,6 +80,8 @@ shared runtime directory and supplemental gid `984`; it receives neither UniFi
 appdata, the UniFi keystore-password secret, nor the Docker socket. See the
 [production deployment guide](docs/production-deployment.md) and
 [first supervised renewal procedure](docs/first-production-renewal.md).
+The signed-tag publication process is in the
+[release procedure](docs/releasing.md).
 
 Stage 7 opens a fresh Python TLS connection to an explicit numeric address,
 port, and server identity. The numeric address avoids an unbounded DNS lookup
@@ -95,7 +97,8 @@ check leaves the Stage-6 rollback and journal intact and does not trigger
 signing, import, or automatic rollback.
 
 The implemented supervised path has been validated against a real UniFi
-deployment. Threshold policy, unattended scheduling, and release publication
+deployment. A protected signed-tag release pipeline is implemented, but no
+release has been published yet. Threshold policy and unattended scheduling
 remain future work.
 
 ## Intended Renewal Model
@@ -159,8 +162,8 @@ The private key must not be exported from UniFi during routine renewal.
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
    finalisation are implemented and production-proven under supervision.
 8. Threshold-based one-shot renewal is not implemented.
-9. Non-root one-shot container packaging is implemented; external scheduling is
-   not yet implemented.
+9. Non-root one-shot container packaging and signed-tag publication are
+   implemented; external scheduling and the first release are not completed.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.
@@ -185,6 +188,8 @@ Deployment steps and permission checks are in
 [`docs/production-deployment.md`](docs/production-deployment.md). The deliberately
 supervised first renewal procedure is in
 [`docs/first-production-renewal.md`](docs/first-production-renewal.md).
+The container publication and verification procedure is in
+[`docs/releasing.md`](docs/releasing.md).
 
 ## Verified Deployment Baseline — 2026-09-02
 
