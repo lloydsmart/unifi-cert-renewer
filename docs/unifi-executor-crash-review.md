@@ -1,8 +1,9 @@
 # Executor crash-boundary review
 
-This is a protocol analysis of the disabled executor foundation, not power-loss
-test evidence. `J` denotes the journal, `N` its temporary replacement, `S` stage,
-and `R` rollback. The lock may exist at every boundary and is never removed.
+This is a protocol analysis of the implemented production executor, not
+power-loss test evidence. `J` denotes the journal, `N` its temporary replacement,
+`S` stage, and `R` rollback. The lock may exist at every boundary and is never
+removed.
 Old canonical content is assumed valid at entry. Service state describes the
 existing container; after container/host restart it is unknown until a startup
 hook enforces exclusion. See [executor assumptions](unifi-executor.md).

@@ -43,6 +43,11 @@ validity, leaf constraints, and the configured CA path are validated. One direct
 issuing self-signed CA is currently supported; intermediate chains, multiple
 anchors, and invalid CA self-signatures are rejected.
 
+Extended Key Usage must be exactly `{serverAuth}` or exactly
+`{serverAuth, 1.3.6.1.5.5.8.2.2}`. The latter is the stock OPNsense
+`server_cert` profile. A missing EKU, either OID alone without `serverAuth`, any
+superset, or any additional OID is rejected.
+
 `CertificateImportPlan` contains only public reply bytes, exact leaf-first DER
 chain, and issued metadata. **It no longer contains argv.** CSR execution accepts
 a `CertificatePolicy`; import accepts the raw `CertificateImportRequest`. Neither
@@ -113,5 +118,7 @@ leaves recovery material intact.
 
 Production installation is exposed only through the reviewed fixed Unix-socket
 boundary and s6 startup recovery integration described in
-[the production deployment guide](production-deployment.md). A supervised first
-real renewal remains required before unattended use.
+[the production deployment guide](production-deployment.md). The first supervised
+production installation and live finalisation succeeded on 2026-09-15; see the
+[recorded execution evidence](first-production-renewal.md#first-production-execution-evidence).
+Threshold-based renewal and unattended scheduling remain unimplemented.

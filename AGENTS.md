@@ -2,9 +2,10 @@
 
 ## Project Purpose
 
-`unifi-cert-renewer` automates monitoring and renewal of the HTTPS certificate
-used by the UniFi Network Application, using an internal OPNsense certificate
-authority.
+`unifi-cert-renewer` provides supervised renewal of the HTTPS certificate used
+by the UniFi Network Application, using an internal OPNsense certificate
+authority. Threshold monitoring and unattended scheduling remain intended
+future capabilities.
 
 The project is security-sensitive. Changes can affect certificate trust,
 OPNsense CA access, UniFi availability, TLS verification, and management of an
@@ -14,24 +15,36 @@ Prefer simple, auditable behaviour over convenience or broad abstraction.
 
 ## Current Development State
 
-The project is in initial development.
+The supervised end-to-end renewal path is implemented. The first successful
+production signing, installation, live TLS verification, and finalisation
+completed on 2026-09-15. Read-only inspection, in-place CSR generation and
+validation, narrow OPNsense signing, issued-certificate validation, guarded
+installation, live verification, the fixed Unix-socket executor boundary, and
+non-root one-shot container packaging are represented by code and tests.
 
-Do not assume a proposed interface, container layout, command, file path,
-keystore format, or UniFi implementation detail has already been validated
-unless it is represented by code, tests, or documented live evidence in this
-repository.
+Threshold-based renewal, unattended scheduling, CA rollover, and release
+publication are not implemented.
 
-Build functionality incrementally:
+Do not assume an interface, container layout, command, file path, keystore
+format, or UniFi implementation detail has been validated unless it is
+represented by code, tests, or documented live evidence in this repository.
 
-1. Read-only certificate and keystore inspection.
-2. CSR generation from the existing UniFi keypair.
-3. CSR validation.
-4. OPNsense signing.
-5. Signed-certificate validation.
-6. Certificate installation against the existing keypair.
-7. Live post-install verification.
-8. Threshold-based unattended renewal.
-9. Container packaging and scheduling.
+The implementation stages are:
+
+1. Read-only certificate and keystore inspection — implemented and
+   production-proven.
+2. CSR generation from the existing UniFi keypair — implemented and
+   production-proven.
+3. CSR validation — implemented and production-proven.
+4. OPNsense signing — implemented and production-proven.
+5. Signed-certificate validation — implemented and production-proven.
+6. Certificate installation against the existing keypair — implemented and
+   production-proven under supervision.
+7. Live post-install verification — implemented and production-proven under
+   supervision.
+8. Threshold-based unattended renewal — not implemented.
+9. Non-root one-shot container packaging — implemented; unattended scheduling
+   and release publication are not implemented.
 
 Destructive or state-changing stages must not be introduced before their
 read-only prerequisites are testable.
@@ -133,7 +146,7 @@ A renewal that cannot prove the live result must report failure.
 
 ## Docker and Host Boundaries
 
-Do not grant a future renewer container unrestricted Docker daemon access.
+Do not grant the production renewer container unrestricted Docker daemon access.
 
 In particular, do not mount:
 
@@ -154,22 +167,37 @@ documenting the trust-boundary change.
 
 ## Repository Layout
 
-The anticipated application layout is:
+The current application layout is:
 
 ```text
 src/
+    certificate.py
+    csr.py
+    production_renewer.py
     unifi_cert_renewer.py
     unifi_client.py
+    unifi_executor.py
+    unifi_executor_client.py
+    unifi_executor_files.py
+    unifi_executor_service.py
+    unifi_process.py
+    unifi_tls.py
     opnsense_client.py
+    public_key.py
     secure_file.py
     tls_policy.py
-    output_policy.py
 
 tests/
+deployment/
+    renewer/
+    unifi/
+    opnsense/
+docs/
 ```
 
-This is a target layout, not permission to create unnecessary modules before
-their responsibilities are clear.
+Keep this list aligned with material integration boundaries. It is not
+permission to create unnecessary modules before their responsibilities are
+clear.
 
 Keep device-specific operations isolated from orchestration logic.
 
@@ -393,13 +421,14 @@ Pin third-party Actions to immutable commit SHAs.
 
 Dependabot should maintain Python and GitHub Actions dependencies.
 
-Container-specific Dependabot and CI should only be added once a Dockerfile
-exists.
+The existing Dockerfiles should receive container-specific Dependabot and CI
+coverage when that work is introduced. Do not conflate those checks with release
+publication.
 
 Release publication should remain separate from ordinary CI.
 
 When container releases are introduced, build, test, scan, and publish the same
-source revision, and prefer digest-pinned production deployments.
+source revision, and require digest-pinned released production deployments.
 
 ## Documentation Discipline
 

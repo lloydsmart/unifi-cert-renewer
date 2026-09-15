@@ -1,11 +1,13 @@
 # UniFi Certificate Renewer
 
-Automates monitoring and renewal of the HTTPS certificate used by the UniFi
-Network Application with an internal OPNsense certificate authority.
+Provides a supervised renewal path for the HTTPS certificate used by the UniFi
+Network Application with an internal OPNsense certificate authority. Automated
+threshold monitoring and unattended scheduling are planned but not implemented.
 
 ## Status
 
-**Initial development.**
+**The supervised renewal path is implemented and production-proven; unattended
+renewal is not implemented.**
 
 The repository currently implements read-only parsing of captured Java
 `keytool` metadata, public DER X.509 certificates, and public PEM PKCS#10 CSRs.
@@ -30,7 +32,14 @@ through 397 days.
 Issued-certificate validation now proves exact CSR subject, DNS/IP SAN, and SPKI
 continuity; enforces bounded validity and server-leaf constraints; and performs
 offline path verification against configured public CA certificate data using
-the native `cryptography` X.509 verifier.
+the native `cryptography` X.509 verifier. It accepts exactly these Extended Key
+Usage profiles:
+
+* `{serverAuth}`
+* `{serverAuth, 1.3.6.1.5.5.8.2.2}`
+
+The second profile is the stock OPNsense `server_cert` result. No other EKU
+subset, superset, or additional OID is accepted.
 
 The application entrypoint `run_to_installation()` composes inspection, CSR
 generation/validation, OPNsense signing/retrieval, and installation preparation.
@@ -59,11 +68,12 @@ finalisation. It does not provide Docker/host orchestration. An s6 recovery
 oneshot runs before LinuxServer's UniFi configuration init and is a hard
 dependency of the Java longrun. Unsafe or ambiguous recovery state therefore
 blocks Java startup. See the [executor and recovery design](docs/unifi-executor.md).
-A Stage-6 result is explicitly **not a completed renewal**. Production signing
-and import still require a separately supervised first run; unattended
-threshold policy and scheduling remain future work.
+A Stage-6 result is explicitly **not a completed renewal**. The first supervised
+production signing, import, live verification, and finalisation completed
+successfully on 2026-09-15. Threshold-based renewal and unattended scheduling
+remain unimplemented.
 
-Issue #25 adds a dedicated non-root renewer image and a strict production
+The repository includes a dedicated non-root renewer image and a strict production
 entrypoint with `inspect`, `csr`, `prepare`, and `install` one-shot modes. It
 connects only through `UnifiClient(SocketUnifiExecutionBoundary())`, with the
 shared runtime directory and supplemental gid `984`; it receives neither UniFi
@@ -84,8 +94,9 @@ before rollback deletion; interrupted cleanup is repeatable. A failed live
 check leaves the Stage-6 rollback and journal intact and does not trigger
 signing, import, or automatic rollback.
 
-The intended implementation will be developed incrementally and validated
-against a real UniFi deployment before unattended renewal is enabled.
+The implemented supervised path has been validated against a real UniFi
+deployment. Threshold policy, unattended scheduling, and release publication
+remain future work.
 
 ## Intended Renewal Model
 
@@ -125,7 +136,7 @@ Verify live HTTPS certificate
 
 The private key must not be exported from UniFi during routine renewal.
 
-## Planned Development Stages
+## Implementation Stages
 
 1. Read-only inspection of captured UniFi HTTPS certificate and keystore-entry
    data. Parsing and an injected public inspection seam are implemented.
@@ -135,18 +146,19 @@ The private key must not be exported from UniFi during routine renewal.
    verification, requested SAN/SKI inspection, and SPKI continuity validation
    are implemented.
 4. Signing through the OPNsense Trust API. The narrow client and request
-   validation are implemented; production signing has not been performed.
+   validation are implemented and were exercised in the first production renewal.
 5. Validation of the issued certificate. Leaf policy, key continuity, and
    configured-CA path verification are implemented.
 6. Installation against the existing UniFi keypair. Validation, public reply
    preparation, staged import, service quiescence, durable recovery journal, and
    exact post-import public-chain verification are implemented. Production
-   invocation is restricted by the local socket boundary. Disposable Java tests
-   supplement the recorded live OpenJDK 25 evidence.
+   invocation is restricted by the local socket boundary and was exercised in
+   the first supervised production renewal. Disposable Java tests supplement the
+   recorded live OpenJDK 25 evidence.
 7. Live TLS verification following installation. Fresh verified connection,
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
-   finalisation are implemented.
-8. Threshold-based one-shot renewal.
+   finalisation are implemented and production-proven under supervision.
+8. Threshold-based one-shot renewal is not implemented.
 9. Non-root one-shot container packaging is implemented; external scheduling is
    not yet implemented.
 
@@ -198,8 +210,23 @@ LinuxServer UniFi baseline:
 * DER SubjectPublicKeyInfo SHA-256:
   `95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`
 
-These observations describe the deployment examined for the issue; they are
-not assumptions that every UniFi installation has the same layout or metadata.
+These observations are historical pre-renewal evidence for the deployment
+examined in issue #2. The leaf described above is no longer the current
+production leaf. They are not assumptions that every UniFi installation has the
+same layout or metadata.
+
+## First Production Renewal — 2026-09-15
+
+The first supervised end-to-end production renewal completed successfully using
+source commit `8f8b90e70e0844ae2ff821710a49d07efb7cef59`. It preserved the
+historical SPKI SHA-256
+`95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`,
+installed issued serial `16`, and independently verified the exact live leaf
+SHA-256
+`e0272e24b5aba8723ea679f8b45cf5a225bc05daa90ffc3e826de2e600f94346`.
+The run returned `renewal_complete=true`, retained keystore ownership and mode,
+and removed the transaction artifacts after finalisation. See the
+[supervised acceptance procedure and full evidence](docs/first-production-renewal.md).
 
 ## Security Principles
 
@@ -216,7 +243,8 @@ The project follows several non-negotiable design rules:
   verification.
 * The certificate served after renewal must exactly match the certificate that
   was issued.
-* A future renewer container must not receive unrestricted Docker socket access.
+* The production renewer container must not receive unrestricted Docker socket
+  access.
 * Security-scanner exceptions are not enabled by default.
 
 See [`SECURITY.md`](SECURITY.md) for the full security model.
