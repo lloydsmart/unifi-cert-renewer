@@ -311,6 +311,23 @@ and keystore trust boundary, but must not be suppressed or silently ignored.
 Record the comparison and review rather than copying absolute finding counts that
 will become stale.
 
+With both exact images present locally, run:
+
+```bash
+./scripts/scan-container.sh \
+  local/unifi-network-application-cert-renewer:reviewed \
+  lscr.io/linuxserver/unifi-network-application@sha256:<reviewed-digest>
+```
+
+The script saves and scans each image separately using the pinned Trivy image,
+one shared/cache-consistent set of vulnerability database snapshots, and
+identical HIGH/CRITICAL scanner settings. It reports inherited and removed
+findings for review and exits nonzero if any finding exists only in the
+derivative, including findings without an available fix. Absolute vulnerability
+counts are not a durable policy. The comparison itself runs without network
+access in the immutable Python base image already reviewed for the renewer, so
+the validation host requires Docker but does not require Python.
+
 ## First production execution
 
 The first complete supervised production renewal succeeded on 2026-09-15 using
