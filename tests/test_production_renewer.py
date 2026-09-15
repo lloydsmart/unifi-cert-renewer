@@ -298,7 +298,7 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
     compose = (REPOSITORY_ROOT / "deployment/renewer/compose.example.yaml").read_text()
     dockerignore = (REPOSITORY_ROOT / ".dockerignore").read_text()
 
-    assert "FROM python:3.12-slim-bookworm@sha256:" in dockerfile
+    assert "FROM python:3.14-slim-bookworm@sha256:" in dockerfile
     assert "USER 1000:1000" in dockerfile
     assert "src/unifi_executor.py" not in dockerfile
     assert "src/unifi_executor_files.py" not in dockerfile

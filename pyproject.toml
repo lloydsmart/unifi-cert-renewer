@@ -1,4 +1,5 @@
 [tool.ruff]
+# Shared executor code also runs on the UniFi image's distro Python 3.12.
 target-version = "py312"
 line-length = 88
 

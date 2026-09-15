@@ -70,7 +70,7 @@ docker build -f deployment/renewer/Dockerfile \
 ```
 
 The Dockerfile pins the reviewed multi-platform manifest for the minimal
-official `python:3.12-slim-bookworm` base and installs the hash-locked runtime
+official `python:3.14-slim-bookworm` base and installs the hash-locked runtime
 requirements. If that pin is intentionally updated, review the new upstream
 image and record the replacement digest. After pushing the reviewed image,
 deploy its registry digest rather than the local tag. Before publication, an

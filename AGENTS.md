@@ -332,7 +332,9 @@ A future vulnerability exception must be:
 
 ## Python Style
 
-Target Python 3.12 or later unless the project explicitly changes that policy.
+Use Python 3.14 for development, dependency locking, scanning, and the renewer
+container. Keep shared executor code compatible with Python 3.12 while the
+UniFi executor overlay uses that base-distribution runtime.
 
 Use the repository Ruff configuration.
 

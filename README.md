@@ -251,7 +251,10 @@ See [`SECURITY.md`](SECURITY.md) for the full security model.
 
 ## Development Requirements
 
-The development and dependency-locking baseline targets Python 3.12.
+The development and dependency-locking baseline targets Python 3.14.
+Shared executor code remains syntax-compatible with Python 3.12 because the
+current UniFi executor overlay uses its base distribution's Python runtime; CI
+therefore tests the shared source on both Python 3.12 and 3.14.
 
 Direct dependencies are declared in:
 
@@ -264,7 +267,7 @@ separately.
 
 Corresponding `.txt` files are generated, hash-pinned dependency locks.
 
-To regenerate them in a correctly prepared Python 3.12 environment:
+To regenerate them in a correctly prepared Python 3.14 environment:
 
 ```bash
 ./scripts/compile-requirements.sh
