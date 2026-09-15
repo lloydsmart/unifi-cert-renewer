@@ -436,4 +436,6 @@ jobs:
             printf 'Invalid prerelease state: %q\n' "$PRERELEASE" >&2
             exit 1
           fi
-          gh release create "${release_arguments[@]}"
+          gh release create \
+            --repo "$GITHUB_REPOSITORY" \
+            "${release_arguments[@]}"
