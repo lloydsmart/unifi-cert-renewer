@@ -5,8 +5,9 @@ protected tag matching `v*` is pushed. Ordinary branch pushes, pull requests,
 and manual workflow runs cannot publish.
 
 Release candidate `v0.1.0-rc.2` was published on 2026-09-15 and subsequently
-exercised in production using its exact released image digests. Operators
-consuming a release should follow the
+exercised in production using its exact released image digests. Stable `v0.1.0`
+has since been published and production-verified using its exact released
+images. Operators consuming a release should follow the
 [installation and operation runbook](installation.md); this document describes
 publisher provenance, digest, and attestation controls.
 

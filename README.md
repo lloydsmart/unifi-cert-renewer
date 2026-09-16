@@ -1,8 +1,9 @@
 # UniFi Certificate Renewer
 
 Provides a supervised renewal path for the HTTPS certificate used by the UniFi
-Network Application with an internal OPNsense certificate authority. Automated
-threshold monitoring and unattended scheduling are planned but not implemented.
+Network Application with an internal OPNsense certificate authority.
+Threshold-based one-shot renewal is implemented; an external unattended
+schedule is not deployed by this project.
 
 For a released production deployment, start with the
 [installation and operation runbook](docs/installation.md). It takes an operator
@@ -13,8 +14,8 @@ remains the deeper architecture and security reference.
 
 ## Status
 
-**The supervised renewal path is implemented and production-proven; unattended
-renewal is not implemented.**
+**The supervised renewal path is implemented and production-proven, and the
+safe threshold mode needed by an external scheduler is implemented.**
 
 The repository currently implements read-only parsing of captured Java
 `keytool` metadata, public DER X.509 certificates, and public PEM PKCS#10 CSRs.
@@ -77,11 +78,12 @@ dependency of the Java longrun. Unsafe or ambiguous recovery state therefore
 blocks Java startup. See the [executor and recovery design](docs/unifi-executor.md).
 A Stage-6 result is explicitly **not a completed renewal**. The first supervised
 production signing, import, live verification, and finalisation completed
-successfully on 2026-09-15. Threshold-based renewal and unattended scheduling
-remain unimplemented.
+successfully on 2026-09-15. Threshold-based one-shot renewal is implemented;
+deployment of an unattended external schedule remains future work.
 
 The repository includes a dedicated non-root renewer image and a strict production
-entrypoint with `inspect`, `csr`, `prepare`, and `install` one-shot modes. It
+entrypoint with `inspect`, `csr`, `prepare`, `install`, and `renew` one-shot
+modes. It
 connects only through `UnifiClient(SocketUnifiExecutionBoundary())`, with the
 shared runtime directory and supplemental gid `984`; it receives neither UniFi
 appdata, the UniFi keystore-password secret, nor the Docker socket. See the
@@ -105,12 +107,12 @@ check leaves the Stage-6 rollback and journal intact and does not trigger
 signing, import, or automatic rollback.
 
 The implemented supervised path has been validated against a real UniFi
-deployment. Release candidate `v0.1.0-rc.2` was published on 2026-09-15 and
-successfully exercised in production using both exact released image digests.
-This is release evidence, not a portable instruction to keep deploying RC2;
-operators must select and verify the intended current release through the
-[installation runbook](docs/installation.md). Threshold policy and unattended
-scheduling remain future work.
+deployment. Stable release `v0.1.0` has been published and production-verified
+using both exact released image digests. This is release evidence, not a
+portable instruction to keep deploying one version; operators must select and
+verify the intended current release through the
+[installation runbook](docs/installation.md). Deployment of an unattended
+external schedule remains future work.
 
 ## Intended Renewal Model
 
@@ -172,10 +174,11 @@ The private key must not be exported from UniFi during routine renewal.
 7. Live TLS verification following installation. Fresh verified connection,
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
    finalisation are implemented and production-proven under supervision.
-8. Threshold-based one-shot renewal is not implemented.
+8. Threshold-based one-shot renewal is implemented. The `renew` mode checks the
+   exact certificate expiry timestamp and is read-only when renewal is not due.
 9. Non-root one-shot container packaging and signed-tag publication are
-   implemented. `v0.1.0-rc.2` has been published and exercised in production;
-   external scheduling remains unimplemented.
+   implemented. Stable `v0.1.0` has been published and production-verified;
+   external scheduling is not deployed by this project.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.

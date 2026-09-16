@@ -13,7 +13,8 @@
   "issuing_ca_description": "Internal issuing CA",
   "certificate_description": "UniFi HTTPS certificate",
   "trusted_ca_name": "unifi-issuing-ca.pem",
-  "lifetime_days": 30,
+  "lifetime_days": 397,
+  "renew_before_days": 30,
   "digest": "sha384",
   "live_tls": {
     "address": "192.0.2.10",

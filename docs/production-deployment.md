@@ -123,15 +123,21 @@ The fixed files are:
 
 Start from
 [`renewer-config.example.json`](../deployment/renewer/renewer-config.example.json),
-replace every example identity and fingerprint, and keep the exact JSON field
-set. `live_tls.address` must be a numeric address and must remain stable across
-UniFi container recreation; `server_hostname` is the independently verified DNS
-or IP identity. An ephemeral Docker bridge address is not a safe production
-configuration because recreation can silently move the intended service. Assign
-a static address on the shared Docker network, or use an equivalent
-operator-controlled stable numeric address, and keep normal TLS identity
-verification against `server_hostname`. Arbitrary paths, aliases, commands,
-executables, services, and socket paths are not configurable.
+replace every example identity and fingerprint, and keep its fields except that
+`renew_before_days` may be omitted for compatibility, in which case it defaults
+to 30. The renewal window is an integer from 1 through 397 days and is
+intentionally independent of `lifetime_days`; configuration validation does not
+couple the values. If `renew_before_days` is greater than or equal to
+`lifetime_days`, a newly issued certificate will already be inside the renewal
+window, so every scheduled check can renew it. `live_tls.address` must be a
+numeric address and must remain stable across UniFi container recreation;
+`server_hostname` is the independently verified DNS or IP identity. An
+ephemeral Docker bridge address is not a safe production configuration because
+recreation can silently move the intended service. Assign a static address on
+the shared Docker network, or use an equivalent operator-controlled stable
+numeric address, and keep normal TLS identity verification against
+`server_hostname`. Arbitrary paths, aliases, commands, executables, services,
+and socket paths are not configurable.
 
 Before use, inspect the resolved Compose definition and image identity:
 
@@ -196,13 +202,14 @@ No socket path or privileged target is configurable. The caller can provide only
 the existing public certificate policy and public renewal material. Protocol
 version 1 exposes `inspect`, `generate_csr`, `install`, `recover`, and `finalize`.
 
-The production entrypoint accepts exactly one of four manual one-shot modes:
+The production entrypoint accepts exactly one of five one-shot modes:
 
 ```bash
 docker compose -f deployment/renewer/compose.example.yaml run --rm renewer inspect
 docker compose -f deployment/renewer/compose.example.yaml run --rm renewer csr
 docker compose -f deployment/renewer/compose.example.yaml run --rm renewer prepare
 docker compose -f deployment/renewer/compose.example.yaml run --rm renewer install
+docker compose -f deployment/renewer/compose.example.yaml run --rm renewer renew
 ```
 
 `inspect` returns validated public certificate metadata. `csr` generates a CSR
@@ -212,12 +219,24 @@ CSR, signs through OPNsense, validates the issued leaf and import plan, then
 exits without changing UniFi. `prepare` is state-changing on OPNsense because it
 issues a certificate, but it does not mutate UniFi. Because no transaction
 material is persisted in the stateless renewer, a later `install` starts a new
-transaction and obtains a freshly signed certificate. `install` is the sole
-UniFi-mutating one-shot mode: it performs the complete sequence once, requires
-configured live TLS verification, and reports `renewal_complete` only after
-exact live-leaf verification and executor finalisation.
+transaction and obtains a freshly signed certificate. `install` explicitly
+means force-renew-now: it performs the complete sequence once regardless of the
+current certificate's remaining validity, requires configured live TLS
+verification, and reports `renewal_complete` only after exact live-leaf
+verification and executor finalisation.
 
-There is no cron entry, scheduler loop, daemon, threshold policy, automatic
+`renew` is the mode intended for cron or Unraid User Scripts. It first performs
+the same validated public inspection as `inspect`, then renews only when the
+certificate's exact `not_valid_after` timestamp is at or before the current UTC
+time plus `renew_before_days`. A not-due result exits successfully with
+`state=renewal_not_due` and is genuinely read-only: it does not read the issuing
+CA, request a CSR, construct the OPNsense client, sign, install, restart UniFi,
+or create transaction state. A due result uses the same complete guarded path
+as `install`. Every external scheduler must use one shared host-side `flock` or
+equivalent overlap guard around the complete `renew` invocation so concurrent
+runs cannot both enter the due path.
+
+There is no repository-provided cron entry, scheduler loop, daemon, automatic
 state-changing retry, or container restart loop. After any ambiguous signing,
 installation, verification, or finalisation failure, stop and inspect the
 recorded state; do not automatically invoke the mode again.
@@ -236,7 +255,8 @@ treated as persistent on any filesystem. If remount/reboot makes recorded
 identity ambiguous, startup blocks and preserves evidence for an operator. Do
 not edit the journal or delete rollback artifacts merely to make startup pass.
 
-Threshold policy and unattended scheduling are not implemented by issue #17.
+The threshold policy is implemented by the production `renew` mode. External
+unattended scheduling is not deployed by issue #17.
 
 ## OPNsense least-privilege ACL
 
@@ -340,6 +360,6 @@ The first complete supervised production renewal succeeded on 2026-09-15 using
 merged source commit `8f8b90e70e0844ae2ff821710a49d07efb7cef59` and exact
 pre-release local image IDs. That run proves the documented signing,
 installation, live-verification, and finalisation path; it does not turn those
-local IDs into registry release references and does not implement threshold or
-scheduled renewal. The detailed evidence is recorded in
+local IDs into registry release references and predates threshold-based
+one-shot renewal. The detailed evidence is recorded in
 [`first-production-renewal.md`](first-production-renewal.md#first-production-execution-evidence).
