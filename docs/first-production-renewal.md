@@ -85,9 +85,10 @@ Java up, re-sign, or re-import. Preserve the bounded diagnostic and current file
 metadata, keep the appdata backup available, and review the journal/state against
 [`unifi-executor.md`](unifi-executor.md) before an explicit recovery decision.
 
-Unattended scheduling, threshold checks, automatic retries, and general
-daemonisation remain out of scope. Each command above is a separate manual
-one-shot invocation.
+External scheduling, automatic retries, and general daemonisation remain out of
+scope for this acceptance procedure. Each command above is a separate manual
+one-shot invocation; the later `renew` threshold mode is not part of the
+historical qualification sequence.
 
 ## First production execution evidence
 

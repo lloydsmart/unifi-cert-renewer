@@ -5,11 +5,13 @@ This is the primary operator path for installing a released
 Application. It covers initial deployment, the first supervised renewal,
 verification, upgrades, and failure handling.
 
-This project does not provide unattended scheduling or threshold-based renewal.
-Every mode is a manual one-shot operation. For the security rationale and full
-deployment contract, see [Production deployment](production-deployment.md). For
-implementation details, see [Certificate installation](certificate-installation.md)
-and [Executor and recovery](unifi-executor.md). The recorded production
+This project provides threshold-based one-shot renewal but does not deploy an
+unattended scheduler. An operator may invoke that mode from cron or Unraid User
+Scripts after completing this supervised setup. For the security rationale and
+full deployment contract, see
+[Production deployment](production-deployment.md). For implementation details,
+see [Certificate installation](certificate-installation.md) and
+[Executor and recovery](unifi-executor.md). The recorded production
 qualification is [Supervised production acceptance renewal](first-production-renewal.md).
 
 ## 1. Prerequisites and supported topology
@@ -289,7 +291,9 @@ secret, or `/var/run/docker.sock`.
 
 Copy [the example configuration](../deployment/renewer/renewer-config.example.json)
 into the renewer secrets directory and replace every example identity and
-fingerprint. Keep the exact JSON field set.
+fingerprint. Keep the example fields; `renew_before_days` is optional only for
+compatibility with existing `v0.1.0` configuration and defaults to 30 when
+omitted.
 
 - `certificate_policy.expected_spki_sha256`: lowercase SHA-256 of the existing
   UniFi key's DER SubjectPublicKeyInfo. Establish it from an authoritative
@@ -312,6 +316,12 @@ fingerprint. Keep the exact JSON field set.
 - `trusted_ca_name`: filename of the public issuing CA used for issued-certificate
   and live UniFi TLS verification.
 - `lifetime_days`: requested lifetime from 1 through 397 days.
+- `renew_before_days`: independent renewal threshold from 1 through 397 days.
+  The default is 30. It is intentionally independent of `lifetime_days`, and
+  configuration validation does not couple the two values. If
+  `renew_before_days` is greater than or equal to `lifetime_days`, a newly
+  issued certificate will already be within the renewal window, so every
+  scheduled check can renew it.
 - `digest`: signing digest: `sha256`, `sha384`, or `sha512`.
 - `live_tls.address`: stable, operator-controlled numeric IPv4 or IPv6 address
   used for the actual connection.
@@ -519,11 +529,11 @@ supervision:
 docker compose -f deployment/renewer/compose.example.yaml run --rm renewer install
 ```
 
-`install` is the only UniFi-mutating one-shot mode. It performs a fresh inspect,
+`install` is the explicit force-renew-now mode. It performs a fresh inspect,
 CSR, sign, validation, guarded installation, UniFi restart, verified live TLS
-connection, exact issued-leaf comparison, and executor finalisation. Success
-requires JSON with `state` equal to `renewal_complete` and
-`renewal_complete` equal to `true`.
+connection, exact issued-leaf comparison, and executor finalisation regardless
+of the current certificate's remaining validity. Success requires JSON with
+`state` equal to `renewal_complete` and `renewal_complete` equal to `true`.
 
 After an ambiguous or failed signing, installation, live verification, or
 finalisation operation, do not invoke `install`, `prepare`, or another signing
@@ -620,6 +630,35 @@ docker compose -f deployment/renewer/compose.example.yaml config --images
 Clean up only unused OPNsense certificate records through the separate
 administrator path. Retain the record for the successfully installed
 certificate.
+
+### Schedule routine threshold checks
+
+After the supervised installation and independent verification succeed, the
+`renew` mode is the application entrypoint intended for a separately managed
+cron job or Unraid User Scripts schedule:
+
+```bash
+flock --nonblock /run/lock/unifi-cert-renewer-renew.lock \
+  docker compose -f deployment/renewer/compose.example.yaml run --rm renewer renew
+```
+
+Continue to set both production image references to the reviewed immutable
+release digests; a scheduler must not substitute mutable tags. Every external
+scheduled invocation must use the same operator-controlled host lock, through
+`flock` or equivalent overlap protection, so concurrent scheduler runs cannot
+both proceed through the due path. A daily invocation is safe when the
+certificate is outside the configured window:
+`renew` validates the current public certificate, returns exit status zero with
+`state=renewal_not_due`, and performs no CA read, CSR generation, OPNsense API
+access, signing, installation, restart, or transaction-state creation. At the
+exact threshold or inside it, `renew` uses the same guarded installation and
+live-verification path as `install`.
+
+This repository does not create or deploy that schedule. Configure the external
+scheduler to retain the machine-readable output and alert on a nonzero exit.
+After any ambiguous state-changing failure, disable further scheduled
+invocations and apply the failure rules below; do not turn `renew` into a retry
+loop.
 
 ## 11. Upgrade to another release
 

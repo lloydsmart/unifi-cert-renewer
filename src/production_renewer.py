@@ -5,9 +5,15 @@ import math
 import sys
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from certificate import MAX_TRUST_BUNDLE_BYTES, validate_installation_ca
+from certificate import (
+    MAX_CERTIFICATE_LIFETIME_DAYS,
+    MAX_TRUST_BUNDLE_BYTES,
+    CertificateInfo,
+    validate_installation_ca,
+)
 from csr import CSRInfo
 from opnsense_client import OPNsenseClient, validate_base_url
 from secure_file import SecureFileError, open_secure_file, validate_secure_filename
@@ -28,8 +34,9 @@ from unifi_tls import (
 
 CONFIG_NAME = "renewer-config.json"
 MAX_CONFIG_BYTES = 64 * 1024
-MODES = frozenset({"inspect", "csr", "prepare", "install"})
-Mode = Literal["inspect", "csr", "prepare", "install"]
+MODES = frozenset({"inspect", "csr", "prepare", "install", "renew"})
+Mode = Literal["inspect", "csr", "prepare", "install", "renew"]
+DEFAULT_RENEW_BEFORE_DAYS = 30
 _UNSAFE_TEXT_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
@@ -55,6 +62,7 @@ class ProductionConfig:
     certificate_description: str
     trusted_ca_name: str
     lifetime_days: int
+    renew_before_days: int
     digest: str
     live_endpoint: LiveTLSEndpoint | None
     readiness: ReadinessPolicy | None
@@ -69,10 +77,19 @@ def _json_object(pairs):
     return result
 
 
-def _exact_object(value, fields, label):
-    if not isinstance(value, dict) or set(value) != set(fields):
+def _object_fields(value, required_fields, label, *, optional_fields=frozenset()):
+    if not isinstance(value, dict):
+        raise ProductionConfigurationError(f"{label} fields are invalid")
+    keys = set(value)
+    required = set(required_fields)
+    allowed = required | set(optional_fields)
+    if not required <= keys or not keys <= allowed:
         raise ProductionConfigurationError(f"{label} fields are invalid")
     return value
+
+
+def _exact_object(value, fields, label):
+    return _object_fields(value, fields, label)
 
 
 def _safe_text(value, label, maximum=255):
@@ -153,7 +170,7 @@ def _parse_live_tls(value):
 
 
 def _parse_config(value) -> ProductionConfig:
-    value = _exact_object(
+    value = _object_fields(
         value,
         {
             "certificate_policy",
@@ -166,6 +183,7 @@ def _parse_config(value) -> ProductionConfig:
             "live_tls",
         },
         "configuration",
+        optional_fields={"renew_before_days"},
     )
     policy_value = _exact_object(
         value["certificate_policy"],
@@ -211,6 +229,7 @@ def _parse_config(value) -> ProductionConfig:
     except (TypeError, SecureFileError):
         raise ProductionConfigurationError("trusted_ca_name is invalid") from None
     lifetime_days = value["lifetime_days"]
+    renew_before_days = value.get("renew_before_days", DEFAULT_RENEW_BEFORE_DAYS)
     digest = value["digest"]
     if (
         type(lifetime_days) is not int
@@ -219,6 +238,11 @@ def _parse_config(value) -> ProductionConfig:
         or digest not in {"sha256", "sha384", "sha512"}
     ):
         raise ProductionConfigurationError("signing policy is invalid")
+    if (
+        type(renew_before_days) is not int
+        or not 1 <= renew_before_days <= MAX_CERTIFICATE_LIFETIME_DAYS
+    ):
+        raise ProductionConfigurationError("renewal policy is invalid")
     live_endpoint, readiness = _parse_live_tls(value["live_tls"])
     return ProductionConfig(
         policy=policy,
@@ -233,6 +257,7 @@ def _parse_config(value) -> ProductionConfig:
         ),
         trusted_ca_name=trusted_ca_name,
         lifetime_days=lifetime_days,
+        renew_before_days=renew_before_days,
         digest=digest,
         live_endpoint=live_endpoint,
         readiness=readiness,
@@ -307,16 +332,33 @@ def _csr_output(info: CSRInfo):
     }
 
 
-def _renewal_output(result: InstallationStageResult):
+def _renewal_output(result: InstallationStageResult, mode: Mode):
+    output_mode = "install" if result.installed is not None else "prepare"
+    if mode == "renew":
+        output_mode = mode
     return {
-        "mode": "install" if result.installed is not None else "prepare",
+        "mode": output_mode,
         "state": result.state,
         "renewal_complete": result.renewal_complete,
         "issued_certificate": _certificate_output(result.plan.issued),
     }
 
 
-def run_one_shot(mode: Mode):
+def _renewal_is_due(
+    certificate: CertificateInfo,
+    renew_before_days: int,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    current_time = datetime.now(UTC) if now is None else now
+    if not isinstance(current_time, datetime) or current_time.tzinfo is None:
+        raise ValueError("current time must be timezone-aware")
+    return certificate.not_valid_after <= current_time.astimezone(UTC) + timedelta(
+        days=renew_before_days
+    )
+
+
+def run_one_shot(mode: Mode, *, now: datetime | None = None):
     """Run exactly one selected mode without scheduling or state-changing retry."""
 
     if mode not in MODES:
@@ -343,9 +385,26 @@ def run_one_shot(mode: Mode):
                 "mode": mode,
                 "csr": _csr_output(validate_requested_csr(csr_pem, config.policy)),
             }
+        if mode == "renew":
+            state = unifi.inspect_current(config.policy)
+            certificate = inspect_public_keystore_state(state).certificate
+            if not _renewal_is_due(certificate, config.renew_before_days, now=now):
+                return {
+                    "mode": mode,
+                    "state": "renewal_not_due",
+                    "renewal_due": False,
+                    "renewal_complete": False,
+                    "renew_before_days": config.renew_before_days,
+                    "certificate": _certificate_output(certificate),
+                }
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None
 
+    install = mode in {"install", "renew"}
+    if mode == "renew" and (config.live_endpoint is None or config.readiness is None):
+        raise ProductionRunError(
+            f"Renewer stopped because {mode} requires live TLS verification"
+        )
     trusted_ca_data = _read_trusted_ca(config.trusted_ca_name)
     if mode == "install" and (config.live_endpoint is None or config.readiness is None):
         raise ProductionRunError(
@@ -371,20 +430,26 @@ def run_one_shot(mode: Mode):
             certificate_description=config.certificate_description,
             lifetime_days=config.lifetime_days,
             digest=config.digest,
-            install=mode == "install",
-            live_endpoint=config.live_endpoint if mode == "install" else None,
-            readiness=config.readiness if mode == "install" else ReadinessPolicy(),
+            install=install,
+            live_endpoint=config.live_endpoint if install else None,
+            readiness=config.readiness if install else ReadinessPolicy(),
         )
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None
-    return _renewal_output(result)
+    output = _renewal_output(result, mode)
+    if mode == "renew":
+        output.update(
+            renewal_due=True,
+            renew_before_days=config.renew_before_days,
+        )
+    return output
 
 
 def main(argv=None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 1 or arguments[0] not in MODES:
         print(
-            "Usage: production_renewer.py {inspect|csr|prepare|install}",
+            "Usage: production_renewer.py {inspect|csr|prepare|install|renew}",
             file=sys.stderr,
         )
         return 2

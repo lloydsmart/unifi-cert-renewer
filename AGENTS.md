@@ -4,8 +4,8 @@
 
 `unifi-cert-renewer` provides supervised renewal of the HTTPS certificate used
 by the UniFi Network Application, using an internal OPNsense certificate
-authority. Threshold monitoring and unattended scheduling remain intended
-future capabilities.
+authority. Threshold-based one-shot renewal is implemented; deployment of an
+unattended external schedule remains future work.
 
 The project is security-sensitive. Changes can affect certificate trust,
 OPNsense CA access, UniFi availability, TLS verification, and management of an
@@ -22,10 +22,10 @@ validation, narrow OPNsense signing, issued-certificate validation, guarded
 installation, live verification, the fixed Unix-socket executor boundary, and
 non-root one-shot container packaging are represented by code and tests.
 
-Threshold-based renewal, unattended scheduling, and CA rollover are not
-implemented. The signed-tag release pipeline is implemented. Release candidate
-`v0.1.0-rc.2` has been published and exercised in production using its exact
-released images; no stable release has been published yet.
+Threshold-based one-shot renewal is implemented. Unattended scheduling and CA
+rollover are not implemented. The signed-tag release pipeline is implemented.
+Stable release `v0.1.0` has been published and production-verified using its
+exact released images.
 
 Do not assume an interface, container layout, command, file path, keystore
 format, or UniFi implementation detail has been validated unless it is
@@ -44,10 +44,11 @@ The implementation stages are:
    production-proven under supervision.
 7. Live post-install verification — implemented and production-proven under
    supervision.
-8. Threshold-based unattended renewal — not implemented.
+8. Threshold-based one-shot renewal — implemented; unattended scheduling is
+   not deployed.
 9. Non-root one-shot container packaging and signed-tag release publication —
-   implemented and production-proven with `v0.1.0-rc.2`; unattended scheduling
-   and a stable release are not completed.
+   implemented and production-proven with stable `v0.1.0`; unattended
+   scheduling is not completed.
 
 Destructive or state-changing stages must not be introduced before their
 read-only prerequisites are testable.

@@ -24,8 +24,9 @@ return `renewal_complete` with `renewal_complete=True`.
 The production executor exists inside the key-owning boundary. A fixed,
 permission-controlled Unix socket exposes only its five semantic operations and
 the LinuxServer s6 dependency graph runs recovery before UniFi initialization or
-Java startup. No Docker interface, generic command transport, threshold policy,
-or scheduler is provided.
+Java startup. No Docker interface, generic command transport, or scheduler is
+provided. The production entrypoint's read-only threshold decision remains
+outside this state-changing orchestration and the executor.
 
 ## Validation and interface
 
@@ -121,4 +122,5 @@ boundary and s6 startup recovery integration described in
 [the production deployment guide](production-deployment.md). The first supervised
 production installation and live finalisation succeeded on 2026-09-15; see the
 [recorded execution evidence](first-production-renewal.md#first-production-execution-evidence).
-Threshold-based renewal and unattended scheduling remain unimplemented.
+Threshold-based one-shot renewal is implemented in the production entrypoint;
+deployment of an unattended external schedule remains future work.
