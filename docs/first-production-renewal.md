@@ -1,5 +1,9 @@
 # Supervised production acceptance renewal
 
+This document is the acceptance procedure and evidence record. For an ordinary
+released installation, follow the ordered
+[installation and operation runbook](installation.md).
+
 This is the acceptance procedure for the first production deployment and for a
 materially changed build or deployment whose renewal path must be requalified.
 It can be repeated when qualifying such changes. A routine supervised renewal
@@ -113,3 +117,24 @@ and ownership `1000:1000`, and `.cert-renewer-journal`,
 Post-run cleanup of unused OPNsense certificate records from supervised
 preparation and failed attempts must use a separate administrative path; the
 renewal ACL must not be broadened for cleanup.
+
+## Released-image production exercise
+
+Release candidate `v0.1.0-rc.2`, source commit
+`06c3554bff9b36c8262468bfa48ad0473a6f64f5`, was published on 2026-09-15 and
+then exercised in production using its exact released images:
+
+* renewer:
+  `ghcr.io/lloydsmart/unifi-cert-renewer@sha256:a1c301f387bf8d81504e9de574a7ffdcd95524d455bb2ffa9bcee8c6540bb2af`;
+* UniFi derivative:
+  `ghcr.io/lloydsmart/unifi-network-application-cert-renewer@sha256:10e5c69da0b0b07412ba4e1c7ced1bcab16f9a7a8d18fe31a6de7ce5e5111eb4`.
+
+The supervised run completed `inspect`, `csr`, `prepare`, and exactly one
+`install` invocation. `install` returned `renewal_complete=true`. Independent
+checks confirmed the CA- and hostname-verified served leaf, SPKI continuity,
+public keystore state and permissions, clean final transaction state, executor
+socket permissions and process state, and both exact running release digests.
+
+These immutable references record the RC2 acceptance evidence. They are not
+timeless production defaults; select current deployment digests from the chosen
+GitHub release as described in the [installation runbook](installation.md).

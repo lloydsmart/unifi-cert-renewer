@@ -4,8 +4,11 @@ The release workflow publishes the two production container images only when a
 protected tag matching `v*` is pushed. Ordinary branch pushes, pull requests,
 and manual workflow runs cannot publish.
 
-No release has been published merely because this workflow exists. The first
-planned release candidate is `v0.1.0-rc.1`.
+Release candidate `v0.1.0-rc.2` was published on 2026-09-15 and subsequently
+exercised in production using its exact released image digests. Operators
+consuming a release should follow the
+[installation and operation runbook](installation.md); this document describes
+publisher provenance, digest, and attestation controls.
 
 ## Prerequisites
 
@@ -42,9 +45,10 @@ not move or replace a release tag after pushing it.
 ```bash
 git checkout main
 git pull --ff-only
-git tag -s v0.1.0-rc.1 -m "v0.1.0-rc.1"
-git tag -v v0.1.0-rc.1
-git push origin v0.1.0-rc.1
+RELEASE_TAG='<new-release-tag>'
+git tag -s "$RELEASE_TAG" -m "$RELEASE_TAG"
+git tag -v "$RELEASE_TAG"
+git push origin "$RELEASE_TAG"
 ```
 
 Before any build or publication, the workflow queries GitHub's REST API for the
@@ -128,7 +132,7 @@ when its source repository is public. `GITHUB_TOKEN` publication and the
 but they do not guarantee public visibility. A long-lived PAT is deliberately
 not used to change this setting.
 
-After the first release-candidate run, open each package in GitHub, choose
+When a newly published package is still private, open each package in GitHub, choose
 **Package settings**, then **Change visibility**, and set it to **Public**:
 
 - `unifi-cert-renewer`
@@ -147,20 +151,19 @@ DOCKER_CONFIG="$unauthenticated_config" docker pull \
 rm -rf -- "$unauthenticated_config"
 ```
 
-Do not declare the first release candidate accepted until both pulls succeed.
+Do not declare a release candidate accepted until both pulls succeed.
 
-## First stable-release sequence
+## Stable-release sequence
 
-1. Create and push signed annotated tag `v0.1.0-rc.1`.
-2. Require the release workflow, both image publications, all attestations, and
-   the GitHub prerelease to succeed.
-3. Perform the one-time public package visibility step and unauthenticated
-   digest pulls.
-4. Deploy the exact RC digests to production and complete the supervised smoke
-   and renewal verification.
-5. After approval, create and locally verify signed annotated tag `v0.1.0` on
+1. Require the selected release candidate's workflow, both image publications,
+   all attestations, and GitHub prerelease to have succeeded.
+2. Confirm both packages are public and their exact digests pull without
+   authentication.
+3. Deploy the exact release-candidate digests to production and complete the
+   supervised smoke and renewal verification.
+4. After approval, create and locally verify a signed annotated stable tag on
    the approved `main` commit, then push it.
-6. Verify the stable workflow result and deploy only its recorded immutable
+5. Verify the stable workflow result and deploy only its recorded immutable
    digests.
 
 An `-rc.N` tag creates a GitHub prerelease. A stable version tag creates a
