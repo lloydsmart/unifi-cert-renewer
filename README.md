@@ -4,6 +4,13 @@ Provides a supervised renewal path for the HTTPS certificate used by the UniFi
 Network Application with an internal OPNsense certificate authority. Automated
 threshold monitoring and unattended scheduling are planned but not implemented.
 
+For a released production deployment, start with the
+[installation and operation runbook](docs/installation.md). It takes an operator
+from an existing LinuxServer UniFi deployment through digest verification,
+least-privilege setup, one supervised renewal, independent verification, and
+upgrades. The [production deployment guide](docs/production-deployment.md)
+remains the deeper architecture and security reference.
+
 ## Status
 
 **The supervised renewal path is implemented and production-proven; unattended
@@ -78,7 +85,8 @@ entrypoint with `inspect`, `csr`, `prepare`, and `install` one-shot modes. It
 connects only through `UnifiClient(SocketUnifiExecutionBoundary())`, with the
 shared runtime directory and supplemental gid `984`; it receives neither UniFi
 appdata, the UniFi keystore-password secret, nor the Docker socket. See the
-[production deployment guide](docs/production-deployment.md) and
+[installation and operation runbook](docs/installation.md),
+[production deployment guide](docs/production-deployment.md), and
 [first supervised renewal procedure](docs/first-production-renewal.md).
 The signed-tag publication process is in the
 [release procedure](docs/releasing.md).
@@ -97,9 +105,12 @@ check leaves the Stage-6 rollback and journal intact and does not trigger
 signing, import, or automatic rollback.
 
 The implemented supervised path has been validated against a real UniFi
-deployment. A protected signed-tag release pipeline is implemented, but no
-release has been published yet. Threshold policy and unattended scheduling
-remain future work.
+deployment. Release candidate `v0.1.0-rc.2` was published on 2026-09-15 and
+successfully exercised in production using both exact released image digests.
+This is release evidence, not a portable instruction to keep deploying RC2;
+operators must select and verify the intended current release through the
+[installation runbook](docs/installation.md). Threshold policy and unattended
+scheduling remain future work.
 
 ## Intended Renewal Model
 
@@ -163,7 +174,8 @@ The private key must not be exported from UniFi during routine renewal.
    finalisation are implemented and production-proven under supervision.
 8. Threshold-based one-shot renewal is not implemented.
 9. Non-root one-shot container packaging and signed-tag publication are
-   implemented; external scheduling and the first release are not completed.
+   implemented. `v0.1.0-rc.2` has been published and exercised in production;
+   external scheduling remains unimplemented.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.
@@ -184,9 +196,11 @@ detected so its non-persistent anonymous device-number limitation is explicit.
 If a reboot/remount makes a recorded device/inode identity impossible to prove,
 startup blocks for operator review instead of weakening identity checks.
 
-Deployment steps and permission checks are in
+The primary operator sequence is in
+[`docs/installation.md`](docs/installation.md). Deeper deployment rationale and
+permission checks are in
 [`docs/production-deployment.md`](docs/production-deployment.md). The deliberately
-supervised first renewal procedure is in
+supervised acceptance procedure and historical evidence are in
 [`docs/first-production-renewal.md`](docs/first-production-renewal.md).
 The container publication and verification procedure is in
 [`docs/releasing.md`](docs/releasing.md).

@@ -307,6 +307,7 @@ server keys in tests are loaded through Linux memory-backed file descriptors and
 never receive a filesystem pathname. Persistent recovery identity across an
 ambiguous remount/reboot remains an intentional operator-recovery case.
 The complete executor path, live verification, and finalisation succeeded in the
-first supervised production renewal on 2026-09-15. Threshold renewal,
-unattended scheduling, the first release, and key rotation remain later work;
-the signed-tag publication pipeline is implemented.
+first supervised production renewal on 2026-09-15. Release candidate
+`v0.1.0-rc.2` was subsequently exercised in production using its exact released
+images. Threshold renewal, unattended scheduling, and key rotation remain later
+work; the signed-tag publication pipeline is implemented.

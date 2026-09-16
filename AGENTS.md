@@ -23,8 +23,9 @@ installation, live verification, the fixed Unix-socket executor boundary, and
 non-root one-shot container packaging are represented by code and tests.
 
 Threshold-based renewal, unattended scheduling, and CA rollover are not
-implemented. The signed-tag release pipeline is implemented, but no release has
-been published yet.
+implemented. The signed-tag release pipeline is implemented. Release candidate
+`v0.1.0-rc.2` has been published and exercised in production using its exact
+released images; no stable release has been published yet.
 
 Do not assume an interface, container layout, command, file path, keystore
 format, or UniFi implementation detail has been validated unless it is
@@ -45,7 +46,8 @@ The implementation stages are:
    supervision.
 8. Threshold-based unattended renewal — not implemented.
 9. Non-root one-shot container packaging and signed-tag release publication —
-   implemented; unattended scheduling and the first release are not completed.
+   implemented and production-proven with `v0.1.0-rc.2`; unattended scheduling
+   and a stable release are not completed.
 
 Destructive or state-changing stages must not be introduced before their
 read-only prerequisites are testable.

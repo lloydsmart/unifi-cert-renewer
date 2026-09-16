@@ -1,5 +1,9 @@
 # Production deployment
 
+This is the detailed deployment and security reference. Operators installing or
+upgrading a released deployment should follow the ordered
+[installation and operation runbook](installation.md).
+
 ## Topology and trust boundary
 
 Build the executor overlay from the repository root:
