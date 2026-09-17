@@ -446,13 +446,8 @@ def test_startup_failures_emit_bounded_operator_diagnostic(
     def fail():
         raise UnifiOperationError(marker)
 
-    monkeypatch.setattr(
-        service,
-        "recover_startup"
-        if argument == "recover-startup"
-        else "secure_after_linuxserver_init",
-        fail,
-    )
+    # Both entrypoints call recover_startup, including on an empty /config.
+    monkeypatch.setattr(service, "recover_startup", fail)
     assert service.main([argument]) == 1
     error = capsys.readouterr().err
     assert diagnostic in error

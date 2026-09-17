@@ -19,3 +19,6 @@ COPY src/certificate.py src/csr.py src/public_key.py src/secure_file.py \
     src/unifi_executor_client.py src/unifi_executor_files.py src/unifi_process.py \
     src/unifi_executor_service.py /opt/unifi-cert-renewer/src/
 COPY deployment/unifi/root/ /
+
+# LinuxServer uses s6; Ubuntu's bundled Pebble supervisor is not required.
+RUN rm -f /usr/bin/pebble

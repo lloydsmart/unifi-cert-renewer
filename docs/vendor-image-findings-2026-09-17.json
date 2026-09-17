@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "purpose": "Audit evidence only; not an exception or suppression list",
+  "review_date": "2026-09-17",
+  "architecture": "linux/amd64",
+  "upstream": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+  "upstream_version": "10.6.106-ls146",
+  "trivy_version": "0.74.0",
+  "vulnerability_database_updated_at": "2026-09-17T14:01:01.623693123Z",
+  "java_database_updated_at": "2026-09-17T01:10:53.44054684Z",
+  "raw_report_sha256": "1a67e8d7c995efcf11d20a1c32877b844436545758719fa539d6c475f6dd99e8",
+  "findings": [
+    {
+      "target": "Java",
+      "package": "com.fasterxml.jackson.core:jackson-core",
+      "version": "2.21.2",
+      "path": "usr/lib/unifi/lib/local/jackson-core-2.21.2.jar",
+      "advisory": "GHSA-r7wm-3cxj-wff9",
+      "severity": "HIGH",
+      "fixed_versions": "2.18.8, 2.21.4",
+      "source": "https://github.com/advisories/GHSA-r7wm-3cxj-wff9"
+    },
+    {
+      "target": "Java",
+      "package": "com.fasterxml.jackson.core:jackson-databind",
+      "version": "2.21.2",
+      "path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+      "advisory": "CVE-2026-54512",
+      "severity": "HIGH",
+      "fixed_versions": "2.18.8, 3.1.4, 2.21.4",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-54512"
+    },
+    {
+      "target": "Java",
+      "package": "com.fasterxml.jackson.core:jackson-databind",
+      "version": "2.21.2",
+      "path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+      "advisory": "CVE-2026-54513",
+      "severity": "HIGH",
+      "fixed_versions": "2.18.8, 2.21.4, 3.1.4",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-54513"
+    },
+    {
+      "target": "Java",
+      "package": "com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer",
+      "version": "20240325.1",
+      "path": "usr/lib/unifi/lib/local/owasp-java-html-sanitizer-20240325.1.jar",
+      "advisory": "CVE-2025-66021",
+      "severity": "HIGH",
+      "fixed_versions": "20260101.1",
+      "source": "https://avd.aquasec.com/nvd/cve-2025-66021"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.httpcomponents.core5:httpcore5",
+      "version": "5.3.6",
+      "path": "usr/lib/unifi/lib/local/httpcore5-5.3.6.jar",
+      "advisory": "CVE-2026-54399",
+      "severity": "HIGH",
+      "fixed_versions": "5.4.3, 5.5-beta2",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-54399"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.httpcomponents.core5:httpcore5-h2",
+      "version": "5.3.6",
+      "path": "usr/lib/unifi/lib/local/httpcore5-h2-5.3.6.jar",
+      "advisory": "CVE-2026-54428",
+      "severity": "HIGH",
+      "fixed_versions": "5.4.3, 5.5-beta2",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-54428"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-41293",
+      "severity": "CRITICAL",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41293"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-43512",
+      "severity": "CRITICAL",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-43512"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-43515",
+      "severity": "CRITICAL",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-43515"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-65182",
+      "severity": "CRITICAL",
+      "fixed_versions": "11.0.25, 10.1.58, 9.0.121",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-65182"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-65905",
+      "severity": "CRITICAL",
+      "fixed_versions": "11.0.25, 10.1.58, 9.0.121",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-65905"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-68525",
+      "severity": "CRITICAL",
+      "fixed_versions": "11.0.25, 10.1.58, 9.0.121",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-68525"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-41284",
+      "severity": "HIGH",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41284"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-42498",
+      "severity": "HIGH",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-42498"
+    },
+    {
+      "target": "Java",
+      "package": "org.apache.tomcat.embed:tomcat-embed-core",
+      "version": "10.1.54",
+      "path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+      "advisory": "CVE-2026-43513",
+      "severity": "HIGH",
+      "fixed_versions": "9.0.118, 10.1.55, 11.0.22",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-43513"
+    },
+    {
+      "target": "Java",
+      "package": "org.postgresql:postgresql",
+      "version": "42.7.10",
+      "path": "usr/lib/unifi/lib/local/postgresql-42.7.10.jar",
+      "advisory": "CVE-2026-42198",
+      "severity": "HIGH",
+      "fixed_versions": "42.7.11",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-42198"
+    },
+    {
+      "target": "Java",
+      "package": "org.postgresql:postgresql",
+      "version": "42.7.10",
+      "path": "usr/lib/unifi/lib/local/postgresql-42.7.10.jar",
+      "advisory": "CVE-2026-54291",
+      "severity": "HIGH",
+      "fixed_versions": "42.7.12",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-54291"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework.data:spring-data-commons",
+      "version": "3.5.11",
+      "path": "usr/lib/unifi/lib/local/spring-data-commons-3.5.11.jar",
+      "advisory": "CVE-2026-41695",
+      "severity": "HIGH",
+      "fixed_versions": "4.0.6, 3.5.12",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41695"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework.data:spring-data-commons",
+      "version": "3.5.11",
+      "path": "usr/lib/unifi/lib/local/spring-data-commons-3.5.11.jar",
+      "advisory": "CVE-2026-41716",
+      "severity": "HIGH",
+      "fixed_versions": "4.0.6, 3.5.12",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41716"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework.data:spring-data-mongodb",
+      "version": "4.5.11",
+      "path": "usr/lib/unifi/lib/local/spring-data-mongodb-4.5.11.jar",
+      "advisory": "CVE-2026-41717",
+      "severity": "HIGH",
+      "fixed_versions": "5.0.6, 4.5.12",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41717"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework:spring-expression",
+      "version": "6.2.18",
+      "path": "usr/lib/unifi/lib/local/spring-expression-6.2.18.jar",
+      "advisory": "CVE-2026-41850",
+      "severity": "HIGH",
+      "fixed_versions": "7.0.8, 6.2.19",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41850"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework:spring-webmvc",
+      "version": "6.2.18",
+      "path": "usr/lib/unifi/lib/local/spring-webmvc-6.2.18.jar",
+      "advisory": "CVE-2026-41842",
+      "severity": "HIGH",
+      "fixed_versions": "7.0.8, 6.2.19",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41842"
+    },
+    {
+      "target": "Java",
+      "package": "org.springframework:spring-webmvc",
+      "version": "6.2.18",
+      "path": "usr/lib/unifi/lib/local/spring-webmvc-6.2.18.jar",
+      "advisory": "CVE-2026-41845",
+      "severity": "HIGH",
+      "fixed_versions": "7.0.8, 6.2.19",
+      "source": "https://avd.aquasec.com/nvd/cve-2026-41845"
+    }
+  ]
+}

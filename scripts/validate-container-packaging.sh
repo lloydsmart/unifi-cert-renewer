@@ -86,6 +86,7 @@ docker run --rm \
     --entrypoint /bin/sh \
     "$unifi_image" \
     -ceu '
+        test ! -e /usr/bin/pebble
         test -f /opt/unifi-cert-renewer/src/unifi_executor.py
         test -f /opt/unifi-cert-renewer/src/unifi_executor_files.py
         test -f /opt/unifi-cert-renewer/src/unifi_process.py

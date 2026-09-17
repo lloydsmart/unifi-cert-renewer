@@ -274,9 +274,9 @@ See [`SECURITY.md`](SECURITY.md) for the full security model.
 ## Development Requirements
 
 The development and dependency-locking baseline targets Python 3.14.
-Shared executor code remains syntax-compatible with Python 3.12 because the
-current UniFi executor overlay uses its base distribution's Python runtime; CI
-therefore tests the shared source on both Python 3.12 and 3.14.
+Shared executor code remains syntax-compatible with Python 3.12. The reviewed
+UniFi executor overlay now uses distro Python 3.14; CI continues testing the
+shared source on both Python 3.12 and 3.14.
 
 Direct dependencies are declared in:
 
