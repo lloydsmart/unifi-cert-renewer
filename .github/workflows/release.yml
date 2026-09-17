@@ -164,6 +164,7 @@ jobs:
 
           docker build \
             --file deployment/renewer/Dockerfile \
+            --build-arg "UNRAID_ICON_REF=$SOURCE_SHA" \
             --label "org.opencontainers.image.source=$source_url" \
             --label "org.opencontainers.image.revision=$SOURCE_SHA" \
             --label "org.opencontainers.image.version=$RELEASE_TAG" \
@@ -199,6 +200,7 @@ jobs:
         run: |
           set -euo pipefail
           source_url="https://github.com/$GITHUB_REPOSITORY"
+          icon_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SOURCE_SHA}/assets/icon.png"
           for image_id in "$RENEWER_ID" "$UNIFI_ID"; do
             [[ $(docker image inspect --format \
               '{{ index .Config.Labels "org.opencontainers.image.source" }}' \
@@ -210,6 +212,9 @@ jobs:
               '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
               "$image_id") == "$RELEASE_TAG" ]]
           done
+          [[ $(docker image inspect --format \
+            '{{ index .Config.Labels "net.unraid.docker.icon" }}' \
+            "$RENEWER_ID") == "$icon_url" ]]
 
       - name: Assert container packaging boundaries
         env:
