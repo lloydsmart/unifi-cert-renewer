@@ -2,6 +2,15 @@ name: Deployment CI
 
 on:
   workflow_call:
+    inputs:
+      force-validation:
+        description: Run validation regardless of the standalone path filter
+        type: boolean
+        default: false
+    outputs:
+      passed:
+        description: Every required internal job succeeded
+        value: ${{ jobs.ci_result.outputs.passed }}
 
   workflow_dispatch:
 
@@ -16,6 +25,7 @@ jobs:
   changes:
     name: Determine deployment relevance
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       relevant: ${{ steps.relevance.outputs.relevant }}
 
@@ -29,6 +39,7 @@ jobs:
       - name: Determine changed deployment inputs
         id: relevance
         env:
+          FORCE_VALIDATION: ${{ inputs.force-validation }}
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -37,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+          if [[ "$FORCE_VALIDATION" == 'true' || "$EVENT_NAME" == 'workflow_dispatch' ]]; then
             printf '%s\n' 'relevant=true' >>"$GITHUB_OUTPUT"
             exit 0
           fi
@@ -193,6 +204,7 @@ jobs:
     needs: [changes, validate]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Require the appropriate deployment result
@@ -217,3 +229,23 @@ jobs:
           printf 'Unexpected deployment result: relevant=%s validation=%s\n' \
             "$RELEVANT" "$VALIDATION_RESULT" >&2
           exit 1
+
+  # Standalone documentation pushes may legitimately skip validation. Only the
+  # forced PR call needs the all-jobs-success receipt used by the common gate.
+  ci_result:
+    name: Workflow result
+    needs: [changes, validate, gate]
+    if: always() && inputs.force-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      passed: ${{ steps.check.outputs.passed }}
+
+    steps:
+      - name: Confirm all internal checks succeeded
+        id: check
+        env:
+          PASSED: ${{ needs.changes.result == 'success' && needs.validate.result == 'success' && needs.gate.result == 'success' }}
+        run: |
+          test "$PASSED" = 'true'
+          printf 'passed=true\n' >>"$GITHUB_OUTPUT"

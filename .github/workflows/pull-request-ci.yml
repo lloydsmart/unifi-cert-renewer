@@ -8,15 +8,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pull-request-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: Determine applicable CI
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
-      actions: ${{ steps.relevance.outputs.actions }}
-      markdown: ${{ steps.relevance.outputs.markdown }}
-      python_lint: ${{ steps.relevance.outputs.python_lint }}
-      python_tests: ${{ steps.relevance.outputs.python_tests }}
+      containers: ${{ steps.relevance.outputs.containers }}
 
     steps:
       - name: Checkout complete repository history
@@ -25,86 +27,34 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Determine checks required by changed paths
+      - name: Classify all changed paths
         id: relevance
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-
+          [[ "$PR_BASE" =~ ^[0-9a-f]{40}$ && "$PR_HEAD" =~ ^[0-9a-f]{40}$ ]]
           git cat-file -e "${PR_BASE}^{commit}"
           git cat-file -e "${PR_HEAD}^{commit}"
-
-          changed_paths=$(mktemp)
-          trap 'rm -f -- "$changed_paths"' EXIT
-          git diff --name-only -z "$PR_BASE...$PR_HEAD" >"$changed_paths"
-
-          actions=false
-          markdown=false
-          python_lint=false
-          python_tests=false
-
-          while IFS= read -r -d '' changed_path; do
-            case "$changed_path" in
-              .github/workflows/*.yml | .github/workflows/*.yaml)
-                actions=true
-                ;;
-            esac
-            case "$changed_path" in
-              *.md | .markdownlint-cli2.jsonc | \
-                .github/workflows/lint-markdown.yml)
-                markdown=true
-                ;;
-            esac
-            case "$changed_path" in
-              *.py | pyproject.toml | requirements*.in | requirements*.txt | \
-                .github/workflows/lint-python.yml)
-                python_lint=true
-                ;;
-            esac
-            case "$changed_path" in
-              *.py | pyproject.toml | requirements*.in | requirements*.txt | \
-                scripts/compile-requirements.sh | \
-                .github/workflows/test-python.yml)
-                python_tests=true
-                ;;
-            esac
-          done <"$changed_paths"
-
-          printf 'Actions lint required: %s\n' "$actions"
-          printf 'Markdown lint required: %s\n' "$markdown"
-          printf 'Python lint required: %s\n' "$python_lint"
-          printf 'Python tests required: %s\n' "$python_tests"
-          {
-            printf 'actions=%s\n' "$actions"
-            printf 'markdown=%s\n' "$markdown"
-            printf 'python_lint=%s\n' "$python_lint"
-            printf 'python_tests=%s\n' "$python_tests"
-          } >>"$GITHUB_OUTPUT"
+          git diff --no-ext-diff --no-textconv --no-renames --name-status -z \
+            "$PR_BASE...$PR_HEAD" >"$RUNNER_TEMP/ci-changes"
+          python scripts/ci_policy.py changes "$RUNNER_TEMP/ci-changes" >>"$GITHUB_OUTPUT"
 
   actions:
-    name: Applicable Actions lint
-    needs: changes
-    if: needs.changes.outputs.actions == 'true'
+    name: Required Actions lint
     uses: ./.github/workflows/lint-actions.yml
 
   markdown:
-    name: Applicable Markdown lint
-    needs: changes
-    if: needs.changes.outputs.markdown == 'true'
+    name: Required Markdown lint
     uses: ./.github/workflows/lint-markdown.yml
 
   python_lint:
-    name: Applicable Python lint
-    needs: changes
-    if: needs.changes.outputs.python_lint == 'true'
+    name: Required Python lint
     uses: ./.github/workflows/lint-python.yml
 
   python_tests:
-    name: Applicable Python tests
-    needs: changes
-    if: needs.changes.outputs.python_tests == 'true'
+    name: Required Python tests
     uses: ./.github/workflows/test-python.yml
 
   security:
@@ -113,76 +63,26 @@ jobs:
 
   deployment:
     name: Applicable deployment CI
+    needs: changes
+    if: needs.changes.outputs.containers == 'true'
     uses: ./.github/workflows/deployment.yml
+    with:
+      force-validation: true
 
   gate:
     name: Required CI gate
-    needs:
-      - changes
-      - actions
-      - markdown
-      - python_lint
-      - python_tests
-      - security
-      - deployment
+    needs: [changes, actions, markdown, python_lint, python_tests, security, deployment]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Require every applicable check to pass
         env:
-          ACTIONS_RELEVANT: ${{ needs.changes.outputs.actions }}
-          ACTIONS_RESULT: ${{ needs.actions.result }}
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
-          MARKDOWN_RELEVANT: ${{ needs.changes.outputs.markdown }}
-          MARKDOWN_RESULT: ${{ needs.markdown.result }}
-          PYTHON_LINT_RELEVANT: ${{ needs.changes.outputs.python_lint }}
-          PYTHON_LINT_RESULT: ${{ needs.python_lint.result }}
-          PYTHON_TESTS_RELEVANT: ${{ needs.changes.outputs.python_tests }}
-          PYTHON_TESTS_RESULT: ${{ needs.python_tests.result }}
-          SECURITY_RESULT: ${{ needs.security.result }}
-        run: |
-          set -euo pipefail
-
-          require_success() {
-            local label=$1
-            local result=$2
-            if [[ "$result" != 'success' ]]; then
-              printf '%s ended with: %s\n' "$label" "$result" >&2
-              return 1
-            fi
-          }
-
-          require_applicable_result() {
-            local label=$1
-            local relevant=$2
-            local result=$3
-            if [[ "$relevant" == 'true' && "$result" == 'success' ]]; then
-              return 0
-            fi
-            if [[ "$relevant" == 'false' && "$result" == 'skipped' ]]; then
-              return 0
-            fi
-            printf '%s had an unexpected result: relevant=%s result=%s\n' \
-              "$label" "$relevant" "$result" >&2
-            return 1
-          }
-
-          failed=false
-          require_success 'CI relevance detection' "$CHANGES_RESULT" || failed=true
-          require_applicable_result \
-            'Actions lint' "$ACTIONS_RELEVANT" "$ACTIONS_RESULT" || failed=true
-          require_applicable_result \
-            'Markdown lint' "$MARKDOWN_RELEVANT" "$MARKDOWN_RESULT" || failed=true
-          require_applicable_result \
-            'Python lint' "$PYTHON_LINT_RELEVANT" "$PYTHON_LINT_RESULT" || failed=true
-          require_applicable_result \
-            'Python tests' "$PYTHON_TESTS_RELEVANT" "$PYTHON_TESTS_RESULT" || failed=true
-          require_success 'Security scanning' "$SECURITY_RESULT" || failed=true
-          require_success 'Deployment CI' "$DEPLOYMENT_RESULT" || failed=true
-
-          if [[ "$failed" == 'true' ]]; then
-            exit 1
-          fi
-          printf '%s\n' 'Every applicable required CI check passed.'
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python scripts/ci_policy.py gate
