@@ -54,7 +54,9 @@ evidence, not a replacement for the strict upstream comparator.
 The update removes ten finding rows overall, including the Bouncy Castle
 Critical finding and the previous OpenSSL findings. It is not a clean-image
 claim: **23 fixable inherited findings remain**, including six Critical Tomcat
-rows. They are not accepted vulnerability exceptions or deployment approval.
+rows. This inventory itself grants no exceptions or deployment approval;
+see the subsequent [finding review](vendor-finding-review-2026-09-17.md) for the
+maintainer's exact temporary risk decision.
 
 The [remaining finding inventory](vendor-image-findings-2026-09-17.json) records
 each advisory, version, path, severity and reported fix. It is evidence, not a
@@ -108,10 +110,12 @@ compatible maintained vendor update. Any temporary acceptance must name the
 exact image, package/version and advisory, mitigation, owner and expiry, and be
 reviewed explicitly. No acceptance is introduced here.
 
-The common image policy still needs implementation: block introduced
-High/Critical findings regardless of available fixes, and fixable inherited
-findings without a reviewed time-bounded exception. The current comparator's
-passing result does not mean those remaining findings meet that future policy.
+The [common image policy](container-image-policy.md) now blocks introduced
+High/Critical findings regardless of available fixes and fixable inherited
+findings without a reviewed time-bounded exception. The subsequent finding
+review records explicit approval for the exact 23 inherited findings until
+1 October 2026; it does not establish feature-level mitigation or deployment
+safety.
 
 [release]: https://github.com/linuxserver/docker-unifi-network-application/releases/tag/10.6.106-ls146
 [base]: https://github.com/linuxserver/docker-baseimage-ubuntu/blob/resolute/Dockerfile

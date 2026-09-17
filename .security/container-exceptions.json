@@ -1,4 +1,626 @@
 {
   "schema_version": 1,
-  "exceptions": []
+  "exceptions": [
+    {
+      "identifier": "EX-UNIFI-20260917-001",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "GHSA-r7wm-3cxj-wff9",
+          "package_name": "com.fasterxml.jackson.core:jackson-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/jackson-core-2.21.2.jar",
+          "installed_version": "2.21.2"
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.18.8, 2.21.4"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Chunked untrusted JSON reaches a non-blocking number parser. Whether UniFi uses the async parser for untrusted streams.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-002",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-54512",
+          "package_name": "com.fasterxml.jackson.core:jackson-databind",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+          "installed_version": "2.21.2"
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.18.8, 3.1.4, 2.21.4"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted polymorphic type IDs reach generic type resolution with an approved outer container. Polymorphic typing, validator configuration, and useful gadget reachability.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-003",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-54513",
+          "package_name": "com.fasterxml.jackson.core:jackson-databind",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+          "installed_version": "2.21.2"
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.18.8, 2.21.4, 3.1.4"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted array types reach a validator that permits array subtypes without checking elements. Whether allowIfSubTypeIsArray and attacker-controlled type IDs are used.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-004",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2025-66021",
+          "package_name": "com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/owasp-java-html-sanitizer-20240325.1.jar",
+          "installed_version": "20240325.1"
+        },
+        "severity": "HIGH",
+        "fixed_version": "20260101.1"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Attacker HTML reaches a policy permitting noscript and style with text inside style. Exact UniFi sanitizer policy and subsequent browser rendering.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-005",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-54399",
+          "package_name": "org.apache.httpcomponents.core5:httpcore5",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/httpcore5-5.3.6.jar",
+          "installed_version": "5.3.6"
+        },
+        "severity": "HIGH",
+        "fixed_version": "5.4.3, 5.5-beta2"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted HTTP messages with excessive headers reach the affected parser. Whether UniFi uses affected client or server paths and effective header limits.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-006",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-54428",
+          "package_name": "org.apache.httpcomponents.core5:httpcore5-h2",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/httpcore5-h2-5.3.6.jar",
+          "installed_version": "5.3.6"
+        },
+        "severity": "HIGH",
+        "fixed_version": "5.4.3, 5.5-beta2"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted HPACK blocks reach the decoder before settings acknowledgement applies limits. HTTP/2 use, peer trust, and header-limit timing in UniFi.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-007",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41293",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted HTTP/2 headers reach servlet code without expected protocol validation. Whether HTTP/2 is enabled and downstream code relies on rejected header values.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-008",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-43512",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. A request for an unknown realm user reaches Tomcat DIGEST authentication. Whether UniFi uses Tomcat DIGEST and the relevant realm.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-009",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-43515",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Requests reach overlapping method constraints for the same extension pattern. Exact servlet security constraints and authorization coverage.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-010",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-65182",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "11.0.25, 10.1.58, 9.0.121"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. A longer path constraint precedes a more restrictive sub-path constraint. Effective security-constraint ordering and alternate authorization controls.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-011",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-65905",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "11.0.25, 10.1.58, 9.0.121"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Captured DIGEST requests satisfy a boundary nonce-count window. DIGEST use and attacker ability to obtain an authenticated request.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-012",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-68525",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "11.0.25, 10.1.58, 9.0.121"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. FORM login redirects interact with different POST and GET authorization. FORM authenticator use and per-method security constraints.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-013",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41284",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "HIGH",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted LOCK or PROPFIND request bodies reach an enabled WebDAV servlet. Whether WebDAV is shipped and enabled on any supported UniFi endpoint.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-014",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-42498",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "HIGH",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. An authenticated outgoing WebSocket request follows a cross-host redirect. Use of the affected client and attacker influence over redirect targets.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-015",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-43513",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "HIGH",
+        "fixed_version": "9.0.118, 10.1.55, 11.0.22"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Case variants of a username reach a case-insensitive backing realm behind LockOutRealm. Exact realm chain and case handling; a login page alone does not prove this setup.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-016",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-42198",
+          "package_name": "org.postgresql:postgresql",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/postgresql-42.7.10.jar",
+          "installed_version": "42.7.10"
+        },
+        "severity": "HIGH",
+        "fixed_version": "42.7.11"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. An attacker-controlled PostgreSQL server supplies an excessive SCRAM iteration count. Whether the bundled JDBC driver is used and which database endpoints it can contact.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-017",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-54291",
+          "package_name": "org.postgresql:postgresql",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/postgresql-42.7.10.jar",
+          "installed_version": "42.7.10"
+        },
+        "severity": "HIGH",
+        "fixed_version": "42.7.12"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. A TLS-intercepting peer supplies a certificate algorithm with no channel-binding hash. JDBC use, TLS trust, channelBinding=require, and interception feasibility.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-018",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41695",
+          "package_name": "org.springframework.data:spring-data-commons",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-data-commons-3.5.11.jar",
+          "installed_version": "3.5.11"
+        },
+        "severity": "HIGH",
+        "fixed_version": "4.0.6, 3.5.12"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted property strings reach MappingContext against nested models or many invalid paths. UniFi callers, accepted property paths, and effective input limits.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-019",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41716",
+          "package_name": "org.springframework.data:spring-data-commons",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-data-commons-3.5.11.jar",
+          "installed_version": "3.5.11"
+        },
+        "severity": "HIGH",
+        "fixed_version": "4.0.6, 3.5.12"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. HTTP-supplied names reach unfiltered PropertyPath lookups or supported web bindings. Querydsl or projected-payload binding use and filtering in UniFi.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-020",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41717",
+          "package_name": "org.springframework.data:spring-data-mongodb",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-data-mongodb-4.5.11.jar",
+          "installed_version": "4.5.11"
+        },
+        "severity": "HIGH",
+        "fixed_version": "5.0.6, 4.5.12"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted input reaches an annotated query with a capture-all placeholder. Exact Query or Aggregation annotations and endpoint-to-query input handling.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-021",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41850",
+          "package_name": "org.springframework:spring-expression",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-expression-6.2.18.jar",
+          "installed_version": "6.2.18"
+        },
+        "severity": "HIGH",
+        "fixed_version": "7.0.8, 6.2.19"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. User-controlled expressions reach the SpEL evaluator. Whether untrusted expressions are evaluated and with what restrictions.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-022",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41842",
+          "package_name": "org.springframework:spring-webmvc",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-webmvc-6.2.18.jar",
+          "installed_version": "6.2.18"
+        },
+        "severity": "HIGH",
+        "fixed_version": "7.0.8, 6.2.19"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Requests reach filesystem resources with versioned-resource support enabled. Static-resource configuration and exposure in the vendor application.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    },
+    {
+      "identifier": "EX-UNIFI-20260917-023",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-41845",
+          "package_name": "org.springframework:spring-webmvc",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/spring-webmvc-6.2.18.jar",
+          "installed_version": "6.2.18"
+        },
+        "severity": "HIGH",
+        "fixed_version": "7.0.8, 6.2.19"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-17",
+      "expires_on": "2026-10-01",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/pull/57",
+      "exposure": "Operator reports management, guest-portal and device endpoints restricted to trusted LAN/VPN users and devices; not independently verified. Untrusted text is escaped by JavaScriptUtils then embedded in browser JavaScript. Exact escaping call sites and output context in UniFi templates.",
+      "reason": "Temporary qualification of the exact current vendor bundle while awaiting a vendor-supported fixed release or applicability evidence. Latest release checked 2026-09-17 is 10.6.106-ls146. Direct replacement of bundled JARs is not qualified.",
+      "mitigation": "No advisory-specific mitigation is established. Preserve the operator-reported LAN/VPN restriction. Compromised or malicious permitted clients, devices, peers or stored content remain residual risks. Review before expiry and on any upstream, package, platform or exposure change."
+    }
+  ]
 }

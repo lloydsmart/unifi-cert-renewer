@@ -642,10 +642,26 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-There are currently no project-specific accepted vulnerability exceptions.
+On 2026-09-17 Lloyd Smart explicitly approved the 23 inherited vendor-image
+findings in [the exception registry](.security/container-exceptions.json), with
+Lloyd Smart as owner and reviewer. These exceptions expire at **00:00 UTC on
+2026-10-01**. They apply only to Linux amd64 and upstream digest
+`sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848`,
+with the exact package, installed version, path, advisory, severity, and fix
+metadata recorded in each entry. They do not apply to introduced findings.
 
-Future accepted risks must be documented explicitly in this section rather than
-hidden in scanner configuration.
+The [per-finding review](docs/vendor-finding-review-2026-09-17.md) records the
+unresolved feature/configuration conditions. The operator reports all management,
+guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and
+devices. That restriction has not been independently verified, and no
+advisory-specific mitigation is established. Compromised or malicious permitted
+clients, peers, devices, and stored content remain residual risks.
+
+The decision permits this exact temporary policy exception while awaiting
+vendor-supported fixes or applicability evidence; it does not approve deployment,
+migration, release, or merging a PR. Review on any exposure or scope change and
+before expiry. The scanner fails closed after expiry; renewal requires a new
+explicit decision. Future accepted risks must be documented here.
 
 ## Security Review Triggers
 
