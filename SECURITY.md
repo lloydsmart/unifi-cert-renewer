@@ -546,6 +546,13 @@ runtime directory for the fixed Unix socket, plus membership in the dedicated
 socket group. It does not receive UniFi appdata, the UniFi keystore-password
 secret, the executor implementation, or the Docker socket.
 
+The worker installs its hash-locked runtime dependencies at build time and
+removes pip and the bundled ensurepip installer afterward. Neither setuptools
+nor msgpack is a worker runtime dependency; packaging checks reject their
+presence along with retained installers. The pinned Bookworm base receives the
+exact PCRE2 security update `libpcre2-8-0=10.42-1+deb12u1`. These worker controls
+do not change the vendor UniFi application or its executor environment.
+
 The image and Compose example implement these container hardening controls:
 
 * non-root runtime user;

@@ -2,6 +2,12 @@
 
 FROM python:3.14-slim-bookworm@sha256:9ab8d9c8514b44f90cf0029dd42fdd7e9e211e639c8b995304cc04568dee900f
 
+# The pinned upstream predates Bookworm's PCRE2 security update.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends --only-upgrade \
+        libpcre2-8-0=10.42-1+deb12u1 \
+    && rm -rf /var/lib/apt/lists/*
+
 ARG UNRAID_ICON_REF=main
 
 LABEL org.opencontainers.image.source="https://github.com/lloydsmart/unifi-cert-renewer" \
@@ -18,7 +24,9 @@ RUN groupadd --gid 1000 renewer \
 
 COPY requirements.txt /opt/unifi-cert-renewer/requirements.txt
 RUN python -m pip install --no-cache-dir --require-hashes \
-    -r /opt/unifi-cert-renewer/requirements.txt
+    -r /opt/unifi-cert-renewer/requirements.txt \
+    && python -m pip uninstall --yes pip \
+    && rm -rf /usr/local/lib/python3.14/ensurepip
 
 COPY src/certificate.py src/csr.py src/opnsense_client.py src/production_renewer.py \
     src/public_key.py src/secure_file.py src/tls_policy.py src/unifi_cert_renewer.py \
