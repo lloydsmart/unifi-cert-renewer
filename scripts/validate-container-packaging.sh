@@ -44,6 +44,40 @@ docker run --rm \
         test ! -e /opt/unifi-cert-renewer/src/unifi_process.py
     '
 
+# Import the real entrypoint under the production restrictions. Its help/usage
+# path deliberately returns 2 before reading configuration or using the socket.
+usage_status=0
+usage_output=$(
+    docker run --rm \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+        --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        "$renewer_image" --help 2>&1
+) || usage_status=$?
+if [[ "$usage_status" -ne 2 || "$usage_output" != \
+    'Usage: production_renewer.py {inspect|csr|prepare|install|renew}' ]]; then
+    printf '%s\n' 'Renewer entrypoint did not return its expected usage response.' >&2
+    exit 1
+fi
+
+docker run --rm \
+    --network none \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --entrypoint python \
+    "$renewer_image" \
+    -c 'import importlib.metadata as metadata; import importlib.util as util
+for name in ("pip", "ensurepip", "setuptools", "pkg_resources", "msgpack"):
+    assert util.find_spec(name) is None, f"Unexpected build-time tooling: {name}"
+assert not any(
+    (dist.metadata.get("Name") or "").lower() in {"pip", "setuptools", "msgpack"}
+    for dist in metadata.distributions()
+)
+'
+
 docker run --rm \
     --network none \
     --read-only \

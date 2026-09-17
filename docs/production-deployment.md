@@ -83,6 +83,13 @@ deploy its registry digest rather than the local tag. Before publication, an
 exact local image ID may identify a supervised validation build, but it is not a
 substitute for the registry digest required by a released deployment.
 
+The pinned Bookworm base receives the exact PCRE2 security package update
+`libpcre2-8-0=10.42-1+deb12u1`. Runtime dependencies are installed during the
+build; the worker then removes pip and its bundled ensurepip installer. Package
+changes therefore require a reviewed image rebuild. Packaging validation checks
+the real entrypoint and rejects retained pip, ensurepip, setuptools or msgpack
+tooling. The UniFi application image and its executor environment are separate.
+
 The image runs as uid/gid `1000:1000`. It packages only renewer orchestration,
 certificate/CSR/TLS code, the OPNsense client, and the client half of the fixed
 executor protocol. It does not contain the privileged executor, keystore file
