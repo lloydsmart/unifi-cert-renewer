@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly trivy_image='ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969'
-readonly comparator_image='python:3.14-slim-bookworm@sha256:9ab8d9c8514b44f90cf0029dd42fdd7e9e211e639c8b995304cc04568dee900f'
+readonly comparator_image='python:3.14.7-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6'
 
 if [[ $# -ne 2 || -z $1 || $1 == -* || -z $2 || $2 == -* ]]; then
     printf 'Usage: %s DERIVATIVE_IMAGE EXACT_UPSTREAM_IMAGE\n' "$0" >&2
@@ -12,6 +12,17 @@ fi
 
 derivative_image=$1
 upstream_image=$2
+if [[ ! $upstream_image =~ ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$ ]]; then
+    printf '%s\n' 'The exact upstream image must be pinned by SHA-256 digest.' >&2
+    exit 2
+fi
+
+script_directory=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exception_registry="$script_directory/../.security/container-exceptions.json"
+if [[ ! -f $exception_registry || -L $exception_registry ]]; then
+    printf '%s\n' 'The reviewed image exception registry is missing or invalid.' >&2
+    exit 2
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     printf '%s\n' 'Docker is required but is not available on PATH.' >&2
@@ -25,7 +36,15 @@ for image in "$derivative_image" "$upstream_image"; do
     fi
 done
 
-temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/unifi-cert-renewer-trivy.XXXXXX")
+platform_template='{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}'
+platform=$(docker image inspect --format "$platform_template" "$derivative_image")
+upstream_platform=$(docker image inspect --format "$platform_template" "$upstream_image")
+if [[ ! $platform =~ ^linux/[a-z0-9]+(/[a-z0-9]+)?$ || $platform != "$upstream_platform" ]]; then
+    printf '%s\n' 'Both images must have the same exact Linux platform.' >&2
+    exit 2
+fi
+
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/cert-renewer-trivy.XXXXXX")
 cleanup() {
     rm -rf -- "$temporary_directory"
 }
@@ -66,6 +85,7 @@ run_trivy_scan() {
     local output_name=$2
 
     docker run --rm \
+        --network none \
         --read-only \
         --cap-drop ALL \
         --security-opt no-new-privileges:true \
@@ -87,6 +107,7 @@ run_trivy_scan() {
         --format json \
         --output "/output/$output_name" \
         --exit-code 0 \
+        --offline-scan \
         --skip-db-update \
         --skip-java-db-update \
         --skip-version-check
@@ -102,7 +123,6 @@ run_trivy_scan "$derivative_archive" derivative.json
 printf '%s\n' 'Scanning exact upstream image for HIGH/CRITICAL vulnerabilities'
 run_trivy_scan "$upstream_archive" upstream.json
 
-script_directory=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 docker run --rm \
     --network none \
     --read-only \
@@ -115,5 +135,9 @@ docker run --rm \
     --mount "type=bind,src=$script_directory/compare_container_vulnerabilities.py,dst=/compare.py,readonly" \
     --mount "type=bind,src=$output_directory/derivative.json,dst=/derivative.json,readonly" \
     --mount "type=bind,src=$output_directory/upstream.json,dst=/upstream.json,readonly" \
+    --mount "type=bind,src=$exception_registry,dst=/exceptions.json,readonly" \
     "$comparator_image" \
-    python /compare.py /derivative.json /upstream.json
+    python /compare.py /derivative.json /upstream.json \
+    --exceptions /exceptions.json \
+    --upstream-image "$upstream_image" \
+    --platform "$platform"

@@ -355,3 +355,14 @@ See [`AGENTS.md`](AGENTS.md) for repository-specific development guidance.
 
 This project is licensed under the GNU General Public License version 3.
 See [`LICENSE`](LICENSE).
+
+## Container Vulnerability Policy
+
+Container CI and release verification enforce the
+[common image policy](docs/container-image-policy.md). Introduced HIGH/CRITICAL
+findings block even without a fix; fixable inherited findings require an exact,
+explicitly reviewed, unexpired exception. The initial registry is empty. The
+[2026-09-17 vendor review](docs/vendor-image-review-2026-09-17.md) records 23
+remaining fixable inherited findings; that inventory does not grant exceptions,
+so those findings block this stricter policy until remediated or explicitly
+accepted under its review rules.

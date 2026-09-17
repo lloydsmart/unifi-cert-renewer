@@ -578,8 +578,13 @@ production-proven project control.
 
 The pinned container scanner supports comparison of a derivative image against
 the exact reviewed upstream. Derivative-only HIGH or CRITICAL findings are
-blockers; inherited findings require impact review and must not be silently
-ignored.
+blockers, including when no fix exists. Inherited HIGH or CRITICAL findings
+with an available fix also block unless an exact, explicitly reviewed,
+unexpired exception applies. Unfixed inherited findings remain visible for
+impact review. Missing or invalid policy inputs fail closed. The
+[common image policy](docs/container-image-policy.md) defines exact matching,
+review metadata, and the maximum 90-day exception lifetime. The initial
+`.security/container-exceptions.json` registry contains no accepted risks.
 
 Supervised pre-release validation may identify local builds by exact image ID.
 Once container publishing exists, released production deployment must use the

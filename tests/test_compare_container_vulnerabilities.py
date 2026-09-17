@@ -1,6 +1,9 @@
+import copy
 import importlib
 import json
 import sys
+from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -96,8 +99,8 @@ def test_introduced_unfixed_finding_blocks(severity: str) -> None:
     assert "fixed=<none>" in comparator.render_comparison(comparison)
 
 
-def test_inherited_finding_is_reported_and_passes() -> None:
-    finding = vulnerability("CVE-INHERITED")
+def test_unfixed_inherited_finding_is_reported_and_passes() -> None:
+    finding = vulnerability("CVE-INHERITED", fixed=None)
     comparison = compare(
         report(result(finding, target="derivative:reviewed (debian 12)")),
         report(result(finding, target="upstream@sha256:digest (debian 12)")),
@@ -327,3 +330,281 @@ def test_duplicate_json_keys_fail_closed(tmp_path) -> None:
 
     with pytest.raises(comparator.InvalidReportError, match="duplicate object key"):
         comparator.load_report(path, "derivative")
+
+
+PINNED = "example.invalid/vendor@sha256:" + "a" * 64
+PLATFORM = "linux/amd64"
+TODAY = date(2026, 9, 17)
+
+
+def exception_entry():
+    finding = next(
+        iter(
+            comparator.normalize_findings(
+                report(result(vulnerability("CVE-EXAMPLE"))), "test"
+            ).values()
+        )
+    )
+    return {
+        "identifier": "EX-TEST-001",
+        "upstream_image": PINNED,
+        "platform": PLATFORM,
+        "finding": asdict(finding),
+        "owner": "Synthetic maintainer",
+        "reviewed_by": "Synthetic reviewer",
+        "reviewed_on": "2026-09-01",
+        "expires_on": "2026-10-01",
+        "tracking_url": "https://example.invalid/issues/1",
+        "exposure": "Synthetic isolated fixture only",
+        "reason": "Testing exact exception matching",
+        "mitigation": "Synthetic mitigation for policy tests",
+    }
+
+
+def load_policy(tmp_path, entries, *, today=TODAY):
+    path = tmp_path / "exceptions.json"
+    path.write_text(json.dumps({"schema_version": 1, "exceptions": entries}))
+    return comparator.load_exceptions(path, today=today)
+
+
+def matching_comparison():
+    fixture = report(result(vulnerability("CVE-EXAMPLE")))
+    return compare(fixture, fixture)
+
+
+@pytest.mark.parametrize("severity", ["HIGH", "CRITICAL"])
+@pytest.mark.parametrize("fixed", [None, "", "1.1"])
+def test_inherited_fix_availability_controls_gate(severity, fixed):
+    fixture = report(
+        result(vulnerability("CVE-EXAMPLE", severity=severity, fixed=fixed))
+    )
+    comparison = compare(fixture, fixture)
+    assert comparison.blocked == bool(fixed)
+    assert len(comparison.unexcepted_fixable) == int(bool(fixed))
+
+
+def test_exact_reviewed_exception_allows_only_inherited_finding(tmp_path):
+    entries = load_policy(tmp_path, [exception_entry()])
+    accepted = comparator.apply_exceptions(
+        matching_comparison(), entries, PINNED, PLATFORM
+    )
+    assert not accepted.blocked
+    assert len(accepted.accepted) == 1
+    output = comparator.render_comparison(accepted)
+    assert "Reviewed inherited finding exceptions applied: 1" in output
+    assert "EX-TEST-001" in output and "2026-10-01" in output
+    assert "Synthetic maintainer" in output and "Synthetic reviewer" in output
+    assert "PASS:" in output
+
+
+def test_exception_never_allows_introduced_finding(tmp_path):
+    entries = load_policy(tmp_path, [exception_entry()])
+    comparison = compare(report(result(vulnerability("CVE-EXAMPLE"))), report())
+    actual = comparator.apply_exceptions(comparison, entries, PINNED, PLATFORM)
+    assert actual.blocked
+    assert not actual.accepted
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        ("example.invalid/vendor@sha256:" + "b" * 64, PLATFORM),
+        ("other.invalid/vendor@sha256:" + "a" * 64, PLATFORM),
+        (PINNED, "linux/arm64"),
+    ],
+)
+def test_exception_does_not_cross_image_or_platform(tmp_path, context):
+    entries = load_policy(tmp_path, [exception_entry()])
+    actual = comparator.apply_exceptions(matching_comparison(), entries, *context)
+    assert actual.blocked and not actual.accepted
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("result_class", "lang-pkgs"),
+        ("result_type", "ubuntu"),
+        ("target", "os:debian/13"),
+        ("vulnerability_id", "CVE-DIFFERENT"),
+        ("package_name", "other-package"),
+        ("package_id", "other-package@1.0"),
+        ("package_path", "other/location"),
+        ("installed_version", "2.0"),
+    ],
+)
+def test_exception_requires_every_finding_identity_field(tmp_path, field, value):
+    entry = exception_entry()
+    entry["finding"]["identity"][field] = value
+    entries = load_policy(tmp_path, [entry])
+    actual = comparator.apply_exceptions(
+        matching_comparison(), entries, PINNED, PLATFORM
+    )
+    assert actual.blocked and not actual.accepted
+
+
+@pytest.mark.parametrize(
+    "field,value", [("severity", "CRITICAL"), ("fixed_version", "1.2")]
+)
+def test_changed_severity_or_fix_requires_review(tmp_path, field, value):
+    entry = exception_entry()
+    entry["finding"][field] = value
+    entries = load_policy(tmp_path, [entry])
+    actual = comparator.apply_exceptions(
+        matching_comparison(), entries, PINNED, PLATFORM
+    )
+    assert actual.blocked and not actual.accepted
+
+
+@pytest.mark.parametrize(
+    "field,value", [("Severity", "CRITICAL"), ("FixedVersion", "")]
+)
+def test_conflicting_shared_scan_metadata_fails_closed(field, value):
+    original = vulnerability("CVE-EXAMPLE")
+    changed = original | {field: value}
+    with pytest.raises(comparator.InvalidReportError, match="metadata differs"):
+        compare(report(result(changed)), report(result(original)))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("reviewed_on", "2026-09-18"),
+        ("reviewed_on", "2026-01-01"),
+        ("reviewed_on", "20260901"),
+        ("expires_on", "2026-09-17"),
+        ("expires_on", "2026-09-16"),
+        ("expires_on", "2026-08-31"),
+        ("expires_on", "2026-13-01"),
+        ("expires_on", "2026-12-01"),
+        ("expires_on", "2026-10-01T00:00:00Z"),
+        ("expires_on", None),
+    ],
+)
+def test_invalid_or_expired_review_dates_fail_closed(tmp_path, field, value):
+    entry = exception_entry()
+    entry[field] = value
+    with pytest.raises(comparator.InvalidReportError):
+        load_policy(tmp_path, [entry])
+
+
+def test_expiry_is_exclusive_and_not_silently_ignored_for_other_images(tmp_path):
+    entry = exception_entry()
+    assert load_policy(tmp_path, [entry], today=date(2026, 9, 30))
+    with pytest.raises(comparator.InvalidReportError, match="expired"):
+        load_policy(tmp_path, [entry], today=date(2026, 10, 1))
+
+
+@pytest.mark.parametrize("field", list(exception_entry()))
+def test_missing_exception_fields_fail_closed(tmp_path, field):
+    entry = exception_entry()
+    del entry[field]
+    with pytest.raises(comparator.InvalidReportError):
+        load_policy(tmp_path, [entry])
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("identifier", "*"),
+        ("upstream_image", "example.invalid/vendor:latest"),
+        ("upstream_image", "*@sha256:" + "a" * 64),
+        ("platform", "linux/*"),
+        ("owner", ""),
+        ("owner", " "),
+        ("reviewed_by", ""),
+        ("exposure", ""),
+        ("reason", "line1\nline2"),
+        ("mitigation", "x" * 2049),
+        ("tracking_url", "http://example.invalid/issues/1"),
+        ("tracking_url", "https://user:password@example.invalid/issues/1"),
+    ],
+)
+def test_unbounded_or_incomplete_exception_scope_fails_closed(tmp_path, field, value):
+    entry = exception_entry()
+    entry[field] = value
+    with pytest.raises(comparator.InvalidReportError):
+        load_policy(tmp_path, [entry])
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda entry: entry.update(unrecognized=True),
+        lambda entry: entry["finding"].update(severity="MEDIUM"),
+        lambda entry: entry["finding"].update(fixed_version=""),
+        lambda entry: entry["finding"]["identity"].pop("package_path"),
+        lambda entry: entry["finding"].update(allow_introduced=True),
+    ],
+)
+def test_exception_schema_fails_closed(tmp_path, mutation):
+    entry = exception_entry()
+    mutation(entry)
+    with pytest.raises(comparator.InvalidReportError):
+        load_policy(tmp_path, [entry])
+
+
+def test_duplicate_scope_or_identifier_fails_closed(tmp_path):
+    first = exception_entry()
+    for second in (
+        copy.deepcopy(first),
+        first | {"identifier": "EX-TEST-002"},
+        first | {"platform": "linux/arm64"},
+    ):
+        with pytest.raises(comparator.InvalidReportError, match="duplicate exception"):
+            load_policy(tmp_path, [first, second])
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        [],
+        {},
+        {"schema_version": True, "exceptions": []},
+        {"schema_version": 1.0, "exceptions": []},
+        {"schema_version": 2, "exceptions": []},
+        {"schema_version": 1, "exceptions": None},
+        {"schema_version": 1, "exceptions": [], "allow_inherited": True},
+        {"schema_version": 1, "exceptions": [exception_entry()] * 257},
+    ],
+)
+def test_invalid_registry_fails_closed(tmp_path, policy):
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+    with pytest.raises(comparator.InvalidReportError):
+        comparator.load_exceptions(path, today=TODAY)
+
+
+def test_missing_oversize_duplicate_key_or_invalid_json_registry_fails_closed(tmp_path):
+    path = tmp_path / "policy.json"
+    with pytest.raises(comparator.InvalidReportError):
+        comparator.load_exceptions(path)
+    for value in (
+        "x" * (comparator.MAX_EXCEPTION_BYTES + 1),
+        "{bad",
+        '{"schema_version":1,"schema_version":1,"exceptions":[]}',
+    ):
+        path.write_text(value)
+        with pytest.raises(comparator.InvalidReportError):
+            comparator.load_exceptions(path)
+
+
+def test_cli_empty_registry_enforces_fixable_inherited_and_requires_context(
+    tmp_path, capsys
+):
+    derivative = tmp_path / "derivative.json"
+    upstream = tmp_path / "upstream.json"
+    policy = tmp_path / "policy.json"
+    fixture = report(result(vulnerability("CVE-EXAMPLE")))
+    derivative.write_text(json.dumps(fixture))
+    upstream.write_text(json.dumps(fixture))
+    policy.write_text('{"schema_version":1,"exceptions":[]}')
+    args = [str(derivative), str(upstream), "--exceptions", str(policy)]
+    assert comparator.main(args) == 2
+    assert "failed closed" in capsys.readouterr().err
+    assert (
+        comparator.main(args + ["--upstream-image", PINNED, "--platform", PLATFORM])
+        == 1
+    )
+    output = capsys.readouterr().out
+    assert "Unexcepted fixable inherited HIGH/CRITICAL findings: 1" in output
+    assert "BLOCKED:" in output

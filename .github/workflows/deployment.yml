@@ -72,6 +72,9 @@ jobs:
             case "$changed_path" in
               deployment/* | src/* | scripts/*.sh | \
                 scripts/compare_container_vulnerabilities.py | \
+                .security/container-exceptions.json | \
+                tests/test_compare_container_vulnerabilities.py | \
+                tests/test_scan_container.py | \
                 scripts/validate_deployment.py | \
                 scripts/validate_release_tag.py | requirements.in | \
                 requirements.txt | .dockerignore | \
