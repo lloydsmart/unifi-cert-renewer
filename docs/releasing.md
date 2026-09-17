@@ -59,6 +59,42 @@ directly to a commit, an exact tag-name match, and GitHub verification fields
 target and be an ancestor of `origin/main`. Lightweight, malformed, unsigned,
 unverified, indirectly targeted, or off-main tags fail closed.
 
+## Separate verification and publication
+
+The `verify` job builds, checks, scans, and generates SBOMs with only
+`contents: read`. It has no package-write, attestation-write, or OIDC permission.
+Both tested image archives and both SBOMs cross to a fresh `publish` runner in
+one immutable, same-run artifact selected by its numeric artifact ID. Artifact
+digest mismatch is an error. The candidate manifest binds the fixed file set,
+SHA-256 hashes, tested image IDs, repository, source commit, release tag, run ID,
+and run attempt. Missing, extra, linked, malformed, oversized, or mismatched
+inputs stop publication before loading the images or authenticating to GHCR.
+
+The publisher checks out its reviewed control scripts from the workflow event's
+immutable source SHA, with checkout credentials persistence disabled. It
+independently repeats the signed-tag and main-ancestry checks. It installs no
+dependencies and does not build, test, scan, or start candidate containers.
+After loading the archives, it checks both image IDs and release labels again
+before registry login. It then uses the existing no-overwrite publisher and
+creates all four attestations. A separate finalizer alone has `contents: write`
+and creates the GitHub Release after publication succeeds. It downloads the
+publisher's SBOM artifact by its exact ID with strict digest checking, so an
+artifact with a reused name cannot replace the release assets.
+
+The manifest is an integrity and identity check, not proof that a compromised
+build runner produced safe software or honestly ran its checks. The reviewed
+workflow and publisher controls, GitHub artifact service, Actions, and Docker
+archive parser remain trusted. No executable code is taken from the candidate
+artifact. Complete qualification of every exact release commit, an enforced
+release-signer allowlist, and the broader immutable-release protocol remain
+follow-up work; this job split does not implement those controls.
+
+Candidate artifacts expire after one day. Rerunning only failed jobs in another
+run attempt fails the candidate identity check: rerun the entire workflow to
+rebuild and revalidate. A rebuilt candidate must still satisfy the existing
+version-tag identity rule below. Any workflow rerun or publication requires the
+operator's authorization.
+
 ## Published artifacts
 
 The version tag is published to:
