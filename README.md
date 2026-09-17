@@ -355,3 +355,16 @@ See [`AGENTS.md`](AGENTS.md) for repository-specific development guidance.
 
 This project is licensed under the GNU General Public License version 3.
 See [`LICENSE`](LICENSE).
+
+## Container Vulnerability Policy
+
+Container CI and release verification enforce the
+[common image policy](docs/container-image-policy.md). Introduced HIGH/CRITICAL
+findings block even without a fix; fixable inherited findings require an exact,
+explicitly reviewed, unexpired exception. Lloyd Smart approved the exact 23
+remaining inherited vendor findings for Linux amd64 until **1 October 2026**.
+The [finding review](docs/vendor-finding-review-2026-09-17.md) and
+[accepted-risk record](SECURITY.md#current-accepted-risks) state the scope,
+operator-reported LAN/VPN restriction, and unresolved risks. These exceptions
+do not apply to another upstream, package version, platform, or introduced
+finding, and expire automatically at 00:00 UTC on that date.
