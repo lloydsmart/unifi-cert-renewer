@@ -335,13 +335,12 @@ Development should take place on feature or maintenance branches and be merged
 through pull requests.
 
 The `Pull request CI` workflow gives every pull request to `main` the stable
-`Required CI gate`. The gate requires security scanning plus applicable Python
-tests and dependency-lock freshness, Ruff lint/format, Markdown lint, Actions
-lint, and deployment/container validation. Non-applicable path-specific jobs may
-be skipped only after relevance detection.
-The active `Protect main` repository ruleset now requires the
-`Required CI gate`; renaming or removing the gate requires a matching ruleset
-update.
+`Required CI gate`. Python tests and lock freshness, lint, and security scans
+run on every PR. Only explicitly recognized documentation-only edits may skip
+container validation. Failed, cancelled, missing, or unexpectedly skipped work
+blocks the gate. The active UniFi ruleset already requires this check.
+See the [common CI gate policy](docs/ci-gate-policy.md) for the result contract,
+relevance rules, and the separate repository-protection rollout.
 
 The optional repository commit guard can be enabled with:
 

@@ -683,3 +683,14 @@ Revisit this threat model before introducing any of the following:
 
 A security-sensitive architectural change should be visible in both code review
 and documentation.
+
+## Common PR Gate
+
+The [common CI gate](docs/ci-gate-policy.md) checks explicit success from every
+mandatory workflow and its internal jobs, including full-history secret and
+dependency scans. It fails on cancellation, unexpected skips, malformed results,
+or absent evidence. Only documented changes can skip container validation;
+workflow and policy changes run the full graph. The gate has read-only
+permissions and no publication privileges. Repository settings must separately
+require its stable check name; this workflow change does not modify protection.
+Human review remains necessary because PR code can also change its own gate.
