@@ -535,6 +535,16 @@ Workflows that eventually publish packages or containers should be distinct from
 ordinary test workflows and receive only the permissions required for
 publication.
 
+The signed-tag release workflow separates build/check execution from publication
+authority. A read-only verification job exports the tested image archives and
+SBOMs. A fresh publisher validates a fixed, checksummed, source- and run-bound
+handoff and loaded image identities before GHCR login. Only reviewed controls
+from the immutable workflow source run there; candidate containers and
+artifact-supplied code are never executed. GitHub Release creation remains in a
+separate contents-write finalizer. See [release boundaries](docs/releasing.md).
+Artifact integrity does not establish that a compromised builder's output is
+safe, and workflow-source review remains part of the trust model.
+
 ## Container Security
 
 Container packaging is implemented for a dedicated non-root one-shot renewer and
