@@ -97,7 +97,7 @@ jobs:
     env:
       RENEWER_IMAGE: local/unifi-cert-renewer-ci:${{ github.sha }}
       UNIFI_IMAGE: local/unifi-network-application-cert-renewer-ci:${{ github.sha }}
-      UNIFI_TEST_UPSTREAM: lscr.io/linuxserver/unifi-network-application@sha256:274311cdf64294f217f74004571d214f605ca85ea01002a84bde9eaf5130e43a
+      UNIFI_TEST_UPSTREAM: lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848
 
     steps:
       - name: Checkout repository

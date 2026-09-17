@@ -337,8 +337,8 @@ A future vulnerability exception must be:
 ## Python Style
 
 Use Python 3.14 for development, dependency locking, scanning, and the renewer
-container. Keep shared executor code compatible with Python 3.12 while the
-UniFi executor overlay uses that base-distribution runtime.
+container. Keep shared executor code compatible with Python 3.12; the reviewed
+UniFi executor overlay now uses the base distribution's Python 3.14 runtime.
 
 Use the repository Ruff configuration.
 

@@ -19,7 +19,7 @@ env:
   UNIFI_REPOSITORY: >-
     ghcr.io/lloydsmart/unifi-network-application-cert-renewer
   UNIFI_UPSTREAM: >-
-    lscr.io/linuxserver/unifi-network-application@sha256:274311cdf64294f217f74004571d214f605ca85ea01002a84bde9eaf5130e43a
+    lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848
 
 jobs:
   publish:

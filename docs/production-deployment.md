@@ -285,6 +285,14 @@ from supervised preparation or failed attempts requires a separate
 operator-authorized administrative path; do not broaden the renewer ACL for that
 task.
 
+## Reviewed application image
+
+CI and future releases use the pinned LinuxServer UniFi 10.6.106 image reviewed
+on 2026-09-17. The overlay removes the unused Pebble supervisor; s6 still owns
+service startup. See the [vendor image review](vendor-image-review-2026-09-17.md)
+for exact digests, remaining findings, compatibility evidence and deployment
+limitations. This changes build inputs, not an existing deployment.
+
 ## Disposable boot evidence
 
 The issue #17 review fixes were exercised on 2026-09-12 using LinuxServer
