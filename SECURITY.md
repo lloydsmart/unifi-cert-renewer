@@ -619,7 +619,24 @@ immutable artifact digest
 
 Only a protected `v*` tag push can invoke publication. The workflow requires a
 GitHub-verified signed annotated tag that directly targets a commit reachable
-from `main`. It builds each image once, validates and scans the exact local image
+from `main`. Before building, all reusable lint, complete Python 3.12/3.14 tests,
+lock freshness, dependency audit, and full-history secret checks must pass on
+the exact event commit. Every internal workflow must explicitly confirm success;
+missing or skipped checks block publication.
+
+The builder and publisher independently verify the exact raw tag using the
+reviewed public key in `.security/release-signing-key.asc`, with isolated GnuPG
+homes and no automatic key retrieval/import. Only the full primary fingerprint
+`02EBB31CC0032A86C2C0401A1534542E61DC82D3` (including its certified signing
+subkeys) is authorized. Both jobs bind the signed name and direct source commit
+to the tag-object ID and event SHA; the publisher requires the builder's same
+tag object. Invalid, expired, revoked, ambiguous, or different-key signatures
+fail even if GitHub reports a verified tag. The public key/fingerprint policy
+and workflow must change through review for key rotation or updated public
+revocation information. Historical tagged commits retain their old workflows;
+current controls cannot retroactively secure those release paths.
+
+The workflow builds each image once, validates and scans the exact local image
 ID, creates its SBOM from that image, pushes the same image, and verifies the
 published digest resolves to the tested Docker config identity. GitHub-native
 provenance and SBOM attestations bind the published digest to the workflow.
