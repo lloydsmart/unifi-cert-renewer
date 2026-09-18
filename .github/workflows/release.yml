@@ -22,13 +22,61 @@ env:
     lscr.io/linuxserver/unifi-network-application@sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848
 
 jobs:
+  actions:
+    name: Release Actions lint
+    uses: ./.github/workflows/lint-actions.yml
+
+  markdown:
+    name: Release Markdown lint
+    uses: ./.github/workflows/lint-markdown.yml
+
+  python_lint:
+    name: Release Python lint
+    uses: ./.github/workflows/lint-python.yml
+
+  python_tests:
+    name: Release Python matrix and lock freshness
+    uses: ./.github/workflows/test-python.yml
+
+  security:
+    name: Release dependency and full-history secret scans
+    uses: ./.github/workflows/security.yml
+
+  qualification:
+    name: Require complete checks on the release commit
+    needs: [actions, markdown, python_lint, python_tests, security]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      passed: ${{ steps.qualified.outputs.passed }}
+      source_sha: ${{ steps.qualified.outputs.source_sha }}
+
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require every qualification receipt
+        id: qualified
+        env:
+          QUALIFICATION_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          [[ $(git rev-parse HEAD) == "$GITHUB_SHA" ]]
+          python3 -I scripts/release_qualification.py >>"$GITHUB_OUTPUT"
+
   verify:
     name: Verify, build, and validate without publication permissions
+    needs: qualification
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       contents: read
     outputs:
+      tag_object_sha: ${{ steps.tag.outputs.tag_object_sha }}
       artifact_id: ${{ steps.candidate.outputs.artifact-id }}
       manifest_sha256: ${{ steps.manifest.outputs.manifest_sha256 }}
       renewer_id: ${{ steps.build.outputs.renewer_id }}
@@ -51,12 +99,14 @@ jobs:
           prerelease=$(python3 scripts/validate_release_tag.py version "$RELEASE_TAG")
           printf 'prerelease=%s\n' "$prerelease" >>"$GITHUB_OUTPUT"
 
-      - name: Verify signed annotated tag through GitHub
+      - name: Verify approved signed annotated tag
         id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          QUALIFIED: ${{ needs.qualification.outputs.passed }}
+          QUALIFIED_SHA: ${{ needs.qualification.outputs.source_sha }}
         run: |
           set -euo pipefail
           ref_json="$RUNNER_TEMP/release-tag-ref.json"
@@ -71,6 +121,12 @@ jobs:
             "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha" >"$tag_json"
           source_sha=$(python3 scripts/validate_release_tag.py \
             tag "$RELEASE_TAG" "$tag_object_sha" "$tag_json")
+
+          [[ "$QUALIFIED" == true && "$QUALIFIED_SHA" == "$GITHUB_SHA" ]]
+          [[ "$source_sha" == "$GITHUB_SHA" ]]
+          git --no-replace-objects cat-file tag "$tag_object_sha" >"$RUNNER_TEMP/signed-tag"
+          python3 -I scripts/verify_release_signature.py \
+            "$RELEASE_TAG" "$tag_object_sha" "$source_sha" "$RUNNER_TEMP/signed-tag"
 
           git cat-file -e "${source_sha}^{commit}"
           checked_out_sha=$(git rev-parse HEAD)
@@ -90,6 +146,7 @@ jobs:
             printf 'prerelease=%s\n' "$PRERELEASE"
             printf 'release_tag=%s\n' "$RELEASE_TAG"
             printf 'source_sha=%s\n' "$source_sha"
+            printf 'tag_object_sha=%s\n' "$tag_object_sha"
           } >>"$GITHUB_OUTPUT"
 
       - name: Syntax-check repository and s6 shell scripts
@@ -308,7 +365,7 @@ jobs:
 
   publish:
     name: Publish verified images on a fresh runner
-    needs: verify
+    needs: [verify, qualification]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -338,6 +395,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           ARTIFACT_ID: ${{ needs.verify.outputs.artifact_id }}
+          EXPECTED_TAG_OBJECT_SHA: ${{ needs.verify.outputs.tag_object_sha }}
+          QUALIFIED: ${{ needs.qualification.outputs.passed }}
+          QUALIFIED_SHA: ${{ needs.qualification.outputs.source_sha }}
         run: |
           set -euo pipefail
           [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
@@ -350,6 +410,12 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha" >"$tag_json"
           source_sha=$(python3 -I scripts/validate_release_tag.py \
             tag "$RELEASE_TAG" "$tag_object_sha" "$tag_json")
+          [[ "$QUALIFIED" == true && "$QUALIFIED_SHA" == "$GITHUB_SHA" ]]
+          [[ "$source_sha" == "$GITHUB_SHA" ]]
+          [[ "$tag_object_sha" == "$EXPECTED_TAG_OBJECT_SHA" ]]
+          git --no-replace-objects cat-file tag "$tag_object_sha" >"$RUNNER_TEMP/signed-tag"
+          python3 -I scripts/verify_release_signature.py \
+            "$RELEASE_TAG" "$tag_object_sha" "$source_sha" "$RUNNER_TEMP/signed-tag"
           [[ $(git rev-parse HEAD) == "$source_sha" ]]
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           git merge-base --is-ancestor "$source_sha" origin/main

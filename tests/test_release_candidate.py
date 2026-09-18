@@ -239,7 +239,7 @@ def test_release_workflow_keeps_build_execution_read_only() -> None:
     assert "permissions:\n      contents: read\n    outputs:" in verify
     assert ": write" not in verify
     assert "docker build" in verify and "scan-container.sh" in verify
-    assert "needs: verify" in publish and "needs: publish" in release
+    assert "needs: [verify, qualification]" in publish and "needs: publish" in release
     assert "ref: ${{ github.sha }}" in publish
     assert "persist-credentials: false" in publish
     assert "artifact-ids: ${{ needs.verify.outputs.artifact_id }}" in publish

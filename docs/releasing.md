@@ -47,7 +47,9 @@ not move or replace a release tag after pushing it.
 git checkout main
 git pull --ff-only
 RELEASE_TAG='<new-release-tag>'
-git tag -s "$RELEASE_TAG" -m "$RELEASE_TAG"
+git -c user.name='Lloyd Smart' \
+  -c user.email='lloydsmart@users.noreply.github.com' \
+  tag -u 02EBB31CC0032A86C2C0401A1534542E61DC82D3 "$RELEASE_TAG" -m "$RELEASE_TAG"
 git tag -v "$RELEASE_TAG"
 git push origin "$RELEASE_TAG"
 ```
@@ -58,6 +60,41 @@ directly to a commit, an exact tag-name match, and GitHub verification fields
 `verified: true` and `reason: valid`. The checked-out commit must equal the tag
 target and be an ancestor of `origin/main`. Lightweight, malformed, unsigned,
 unverified, indirectly targeted, or off-main tags fail closed.
+
+Both the builder and publisher also authenticate the raw tag object with GnuPG
+in a fresh temporary keyring containing the reviewed public key from
+`.security/release-signing-key.asc`. They verify the Git object ID, exact signed
+tag name and direct source commit, and the cryptographically verified primary
+fingerprint `02EBB31CC0032A86C2C0401A1534542E61DC82D3`. A valid signing subkey
+certified by that primary is accepted. Tagger names, email addresses, short key
+IDs, and GitHub's verified flag alone cannot authorize publication. Unknown
+owner trust in this isolated keyring is normal; expired, revoked, invalid,
+ambiguous, or unapproved signatures fail. Signatures must use SHA-256, SHA-384,
+or SHA-512. Key retrieval and automatic key import are disabled.
+
+The publisher requires the same tag-object ID checked by the builder, and both
+require the signed source to equal the workflow event's exact commit. The
+public key and fingerprint policy are reviewed source, never candidate inputs.
+Rotation or an updated public revocation/expiry record requires a reviewed PR;
+private signing material is never added to the repository or Actions. GitHub
+verification remains an additional independent requirement.
+
+## Complete release qualification
+
+Every release runs the same reusable Actions lint, Markdown lint, Ruff,
+Python 3.12/3.14 full test matrix, dependency-lock freshness, dependency audit,
+and full-history secret scan used by PR CI. These calls use the workflow event's
+immutable commit for checkout; they do not reuse a green result from another
+commit, consult a moving branch's check status, or apply documentation filters.
+The qualification gate requires every called workflow to succeed and explicitly
+confirm that all its internal jobs passed. Missing, cancelled, failed, or
+skipped checks block the build and publisher.
+
+After qualification, the read-only builder retains the release's shell,
+ShellCheck, ACL, Compose, packaging, image-vulnerability and SBOM checks against
+the exact two release images. It builds each image only once. Existing protected
+main review and CodeQL rules still apply; this does not introduce a separate
+CodeQL tag workflow or replace those repository rules.
 
 ## Separate verification and publication
 
@@ -85,9 +122,11 @@ The manifest is an integrity and identity check, not proof that a compromised
 build runner produced safe software or honestly ran its checks. The reviewed
 workflow and publisher controls, GitHub artifact service, Actions, and Docker
 archive parser remain trusted. No executable code is taken from the candidate
-artifact. Complete qualification of every exact release commit, an enforced
-release-signer allowlist, and the broader immutable-release protocol remain
-follow-up work; this job split does not implement those controls.
+artifact. The broader immutable-release protocol remains follow-up work.
+These controls apply to commits containing this workflow: tagging an older
+commit runs its historical workflow. Release only an appropriately reviewed
+commit containing the current controls; repository-wide tag-creation authority
+and compromise of reviewed workflow source remain separate trust boundaries.
 
 Candidate artifacts expire after one day. Rerunning only failed jobs in another
 run attempt fails the candidate identity check: rerun the entire workflow to
