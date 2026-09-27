@@ -669,20 +669,26 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-09-17 Lloyd Smart explicitly approved the 23 inherited vendor-image
+On 2026-09-26 Lloyd Smart explicitly approved the 25 inherited vendor-image
 findings in [the exception registry](.security/container-exceptions.json), with
 Lloyd Smart as owner and reviewer. These exceptions expire at **00:00 UTC on
 2026-10-01**. They apply only to Linux amd64 and upstream digest
-`sha256:7f15f34937ce928b36d915a0ad4ab6a915a0c34e87affa10c47d09ad1341b848`,
+`sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
 with the exact package, installed version, path, advisory, severity, and fix
 metadata recorded in each entry. They do not apply to introduced findings.
 
-The [per-finding review](docs/vendor-finding-review-2026-09-17.md) records the
-unresolved feature/configuration conditions. The operator reports all management,
-guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and
-devices. That restriction has not been independently verified, and no
-advisory-specific mitigation is established. Compromised or malicious permitted
-clients, peers, devices, and stored content remain residual risks.
+The [26 September vendor-image review](docs/vendor-image-review-2026-09-26.md)
+records qualification of LinuxServer `10.6.106-ls147`, including its byte-identical
+UniFi JAR payload relative to the previously reviewed `ls146` image and the
+additional applicability review for the two Bouncy Castle findings. The
+[17 September per-finding review](docs/vendor-finding-review-2026-09-17.md)
+remains the detailed applicability record for the other 23 unchanged findings.
+
+The operator reports all management, guest-portal, and device-facing endpoints
+restricted to trusted LAN/VPN users and devices. That restriction has not been
+independently verified, and no advisory-specific mitigation is established.
+Compromised or malicious permitted clients, peers, devices, and stored content
+remain residual risks.
 
 The decision permits this exact temporary policy exception while awaiting
 vendor-supported fixes or applicability evidence; it does not approve deployment,
