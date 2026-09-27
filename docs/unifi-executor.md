@@ -5,8 +5,8 @@
 `ProductionUnifiExecutor` executes **inside the UniFi environment**, not inside
 the renewer. `SocketUnifiExecutionBoundary` connects from the renewer through
 the fixed `/run/unifi-cert-renewer/executor.sock`. This is an AF_UNIX socket,
-not a network listener. Protocol version 1 supports exactly `inspect`,
-`generate_csr`, `install`, `recover`, and `finalize`.
+not a network listener. Protocol version 2 supports exactly `inspect`,
+`generate_csr`, `install`, `recover`, and `verify_pending`.
 
 Requests are strictly shaped JSON behind a four-byte length prefix and have an
 8 MiB upper bound. One absolute monotonic deadline spans header and body reads;
@@ -137,7 +137,10 @@ The journal schema is bounded and rejects unknown fields, duplicate JSON keys,
 invalid phases, fingerprints, booleans and inode identities. It contains only a
 transaction UUID, version, phase, initial service-running intent, old/issued SPKI
 and ordered certificate SHA-256 fingerprints, device/inode identities, and
-rollback/commit flags. Fixed filenames are implicit in schema version 1.
+rollback/commit flags and the SHA-256 digest of the executor-owned policy
+artefact. Fixed filenames are implicit in schema version 2. Version 1 journals
+fail closed on this implementation; see
+[the quiescent upgrade gate](policy-and-verification-v2.md).
 No password, API credential, diagnostics or keystore bytes are included.
 
 Each transition writes an exclusive temporary journal, fsyncs it, atomically
@@ -157,7 +160,7 @@ never treats readability alone as proof of transition durability.
 | `committed` | Replacement and directory fsync completed |
 | `canonical_verified` | Fresh canonical passed shared Stage-6 verification |
 | `service_resumed_pending_live_verification` | Initial service state restored; retain rollback/journal |
-| `live_verified` | Exact external TLS success recorded; re-establish its durability barrier before cleanup |
+| `live_verified` | Exact executor-observed TLS success recorded; re-establish its durability barrier before cleanup |
 | `recovery_required` | Failed/interrupted attempt; inspect fresh state |
 | `recovered_old` | Old state verified and initial service state restored; cleanup may be incomplete |
 
@@ -170,28 +173,22 @@ A success message from keytool is never an acceptance criterion.
 
 ## Stage 7 live verification and finalisation
 
-The application side owns endpoint verification. `LiveTLSEndpoint` separately
-configures a numeric network address, port, and TLS server identity; none is
-hard-coded. Requiring a numeric connection address prevents DNS resolution from
-escaping the readiness deadline; the server identity may still be a DNS name.
-A fresh socket is opened after Stage 6 has restored the service. Python's normal
-verified client context performs chain and hostname authentication against the
-explicit public CA with TLS 1.2 as the minimum. Only after that succeeds is the
-peer leaf retrieved and compared byte-for-byte in canonical DER form with the
-issued leaf. Subject, SAN, issuer, serial, validity, CA membership, or SPKI alone
-cannot satisfy this check.
+The executor loads a fixed, host-controlled public policy once before serving
+requests. It contains the authorised identity, issuing CA, lifetime and signature
+policy, plus a numeric connection address, port, separate TLS DNS/IP identity and
+readiness deadline. The worker reads the same artefact but cannot change the
+executor's protected mount. The policy digest is a public drift detector, not a
+capability. See [the v2 policy guide](policy-and-verification-v2.md).
 
-Readiness is bounded by an absolute monotonic deadline, a maximum attempt count,
-per-attempt timeout, and bounded delay. Pre-authentication refusal, reset, and
-timeout may retry. TLS authentication or protocol failure and an authenticated
-wrong leaf fail without being treated as ordinary readiness.
-
-The key-owner-side `finalize_live_verification()` operation accepts only the
-canonical public DER leaf. It requires a journal in
-`service_resumed_pending_live_verification`, the expected service-running state,
-the exact pending issued-leaf SHA-256, the committed inode/public chain, and the
-old rollback inode/public state. A Boolean assertion, arbitrary transaction ID,
-path, command, or executable cannot be supplied.
+`verify_pending` accepts no arguments. Under the executor lock it checks the
+journal's policy digest, pending phase, service, committed canonical and rollback
+identities, then derives the exact expected leaf from the canonical public
+keystore chain and matches its fingerprint to the journal. A fresh TLS socket
+uses the protected numeric address and normal CA and hostname/IP verification
+with TLS 1.2 as the minimum. Its leaf must match the expected canonical DER
+exactly. The executor rechecks local state before recording `live_verified`.
+The existing absolute monotonic readiness deadline, attempt bound, bounded
+delay, and hard failure on TLS authentication or wrong leaf still apply.
 
 The executor writes and fsyncs `live_verified` before removing anything. Before
 every initial, repeated, or recovery cleanup path, it fsyncs the journal file,
@@ -306,9 +303,10 @@ source and tests, including real disposable loopback TLS servers. Generated TLS
 server keys in tests are loaded through Linux memory-backed file descriptors and
 never receive a filesystem pathname. Persistent recovery identity across an
 ambiguous remount/reboot remains an intentional operator-recovery case.
-The complete executor path, live verification, and finalisation succeeded in the
-first supervised production renewal on 2026-09-15. Release candidate
-`v0.1.0-rc.2` was subsequently exercised in production using its exact released
-images. Threshold renewal is implemented above the unchanged executor boundary;
-unattended scheduling and key rotation remain later work. The signed-tag
+The earlier protocol v1 executor path and worker-side live verification
+succeeded in the first supervised production renewal on 2026-09-15. Release
+candidate `v0.1.0-rc.2` was subsequently exercised in production using its
+exact released images. The protocol v2 executor-owned live observation has not
+yet been production-accepted. Threshold renewal is implemented above the
+executor boundary; unattended scheduling and key rotation remain later work. The signed-tag
 publication pipeline is implemented.

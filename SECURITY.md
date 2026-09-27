@@ -43,8 +43,11 @@ Preserving that separation is the primary security objective of this project.
 The supervised renewal path, non-root renewer image, fixed Unix-socket executor,
 startup recovery, live TLS finalisation, and signed-tag release pipeline are
 implemented. The first complete supervised production renewal succeeded on
-2026-09-15. Threshold-based renewal and unattended scheduling are not
-implemented, and no release artifact has been published yet.
+2026-09-15 with the earlier protocol v1 path. Stable v0.1.0 has been
+published and production-verified. The current protocol v2 protected-policy
+and executor-observed TLS path has local coverage but no production acceptance
+yet. Threshold-based renewal is implemented; unattended scheduling is not
+deployed.
 
 Security requirements documented here distinguish implemented controls from
 requirements for future work. A control is not described as implemented without
@@ -266,9 +269,12 @@ fixed Unix-socket protocol is the supported renewer-to-executor cross-boundary
 interface. Trusted local root also invokes recovery during startup and can
 instantiate the executor within the existing host-root trust model. The server
 accepts five semantic operations: public inspection, CSR generation, guarded
-installation, recovery, and exact-pending-leaf finalisation. It accepts no
-command, executable, argv, alias, service name, pathname, Python function, or
-Boolean success assertion. See
+installation, recovery, and executor-owned `verify_pending`. Protocol v2
+loads a protected, host-controlled public policy before accepting requests.
+The worker supplies a public policy digest only as a drift assertion on CSR
+and install requests; it supplies no CA, subject, SAN, lifetime, signature
+policy, or live-verification evidence. It accepts no command, executable, argv,
+alias, service name, pathname, Python function, or Boolean success assertion. See
 [executor and recovery](docs/unifi-executor.md).
 
 The socket directory is a root-owned `0750` bind mount at
@@ -327,10 +333,13 @@ file identities. It may restore the retained old inode atomically, never re-impo
 or re-sign. Unexpected state requires operator intervention. A surviving or
 uninspectable writer retains the helper's lock until operator intervention/helper
 exit. Rollback remains after successful commit until Stage 7 verifies live TLS.
-The narrow finalisation operation accepts the exact public leaf, requires it to
-match the currently pending journal identity, and has no generic success Boolean,
-caller-selected transaction, path, command, or executable. It writes
-`live_verified` durably before unlinking rollback. Recovery may continue cleanup
+The evidence-free `verify_pending` operation derives the pending leaf from
+the executor's canonical keystore, checks the journal's protected policy digest
+and local rollback/canonical state, and makes its own CA- and hostname-verified
+TLS connection to the protected numeric endpoint. Only exact leaf-DER equality
+can cause the durable `live_verified` transition. The worker cannot supply
+the leaf, endpoint, CA, success assertion or verifier token.
+Recovery may continue cleanup
 only from that state after re-establishing journal-file and directory durability
 under the transaction lock. A readable journal replacement is not by itself
 proof that its namespace update crossed the directory fsync barrier. Barrier
@@ -348,7 +357,7 @@ Root-owned artifacts in `abc`-writable appdata rely on excluding all other `abc`
 writers during a transaction.
 
 The fixed local protocol is the only supported mechanism for requesting CSR
-generation, installation, recovery, and finalisation.
+generation, installation, recovery, and trusted verification.
 
 The production renewer container must not receive unrestricted Docker daemon
 access.

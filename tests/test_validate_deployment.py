@@ -35,6 +35,12 @@ def valid_compose() -> dict[str, object]:
                         "target": "/run/secrets",
                         "read_only": True,
                     },
+                    {
+                        "type": "bind",
+                        "source": validator.EXPECTED_POLICY_DIRECTORY,
+                        "target": "/run/unifi-cert-renewer-policy",
+                        "read_only": True,
+                    },
                 ],
                 "networks": {"unifi": None},
             }
@@ -106,6 +112,14 @@ def test_compose_rejects_additional_or_sensitive_mount() -> None:
 def test_compose_rejects_writable_mount() -> None:
     document = valid_compose()
     document["services"]["renewer"]["volumes"][0]["read_only"] = False  # type: ignore[index]
+
+    with pytest.raises(validator.DeploymentValidationError):
+        validator.validate_compose(document)
+
+
+def test_compose_rejects_missing_policy_mount() -> None:
+    document = valid_compose()
+    document["services"]["renewer"]["volumes"].pop()  # type: ignore[index,union-attr]
 
     with pytest.raises(validator.DeploymentValidationError):
         validator.validate_compose(document)

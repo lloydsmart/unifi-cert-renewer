@@ -8,29 +8,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from certificate import (
-    MAX_CERTIFICATE_LIFETIME_DAYS,
-    MAX_TRUST_BUNDLE_BYTES,
-    CertificateInfo,
-    validate_installation_ca,
-)
+from certificate import MAX_CERTIFICATE_LIFETIME_DAYS, CertificateInfo
 from csr import CSRInfo
 from opnsense_client import OPNsenseClient, validate_base_url
+from renewal_policy import RenewalPolicy, load_policy
 from secure_file import SecureFileError, open_secure_file, validate_secure_filename
 from unifi_cert_renewer import InstallationStageResult, run_to_installation
 from unifi_client import (
     CertificatePolicy,
     UnifiClient,
-    build_unifi_csr_command,
     inspect_public_keystore_state,
     validate_requested_csr,
 )
 from unifi_executor_service import SocketUnifiExecutionBoundary
-from unifi_tls import (
-    LiveTLSEndpoint,
-    ReadinessPolicy,
-    validate_live_tls_configuration,
-)
 
 CONFIG_NAME = "renewer-config.json"
 MAX_CONFIG_BYTES = 64 * 1024
@@ -54,18 +44,13 @@ class _DuplicateJSONKeyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ProductionConfig:
+    authority: RenewalPolicy
     policy: CertificatePolicy
     opnsense_base_url: str
     opnsense_timeout_seconds: float
     opnsense_tls_ca_name: str | None
-    issuing_ca_description: str
     certificate_description: str
-    trusted_ca_name: str
-    lifetime_days: int
     renew_before_days: int
-    digest: str
-    live_endpoint: LiveTLSEndpoint | None
-    readiness: ReadinessPolicy | None
 
 
 def _json_object(pairs):
@@ -103,12 +88,6 @@ def _safe_text(value, label, maximum=255):
     return value
 
 
-def _string_tuple(value, label):
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise ProductionConfigurationError(f"{label} is invalid")
-    return tuple(value)
-
-
 def _positive_number(value, label):
     if (
         isinstance(value, bool)
@@ -120,86 +99,14 @@ def _positive_number(value, label):
     return float(value)
 
 
-def _nonnegative_number(value, label):
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value < 0
-    ):
-        raise ProductionConfigurationError(f"{label} is invalid")
-    return float(value)
-
-
-def _parse_live_tls(value):
-    if value is None:
-        return None, None
-    value = _exact_object(
-        value,
-        {
-            "address",
-            "server_hostname",
-            "port",
-            "timeout_seconds",
-            "attempt_timeout_seconds",
-            "retry_delay_seconds",
-            "max_attempts",
-        },
-        "live_tls",
-    )
-    endpoint = LiveTLSEndpoint(
-        value["address"], value["server_hostname"], value["port"]
-    )
-    readiness = ReadinessPolicy(
-        _positive_number(value["timeout_seconds"], "live_tls timeout_seconds"),
-        _positive_number(
-            value["attempt_timeout_seconds"], "live_tls attempt_timeout_seconds"
-        ),
-        _nonnegative_number(
-            value["retry_delay_seconds"], "live_tls retry_delay_seconds"
-        ),
-        value["max_attempts"],
-    )
-    try:
-        validate_live_tls_configuration(endpoint, readiness)
-    except (TypeError, ValueError):
-        raise ProductionConfigurationError(
-            "live_tls configuration is invalid"
-        ) from None
-    return endpoint, readiness
-
-
-def _parse_config(value) -> ProductionConfig:
+def _parse_config(value, authority: RenewalPolicy) -> ProductionConfig:
     value = _object_fields(
         value,
-        {
-            "certificate_policy",
-            "opnsense",
-            "issuing_ca_description",
-            "certificate_description",
-            "trusted_ca_name",
-            "lifetime_days",
-            "digest",
-            "live_tls",
-        },
+        {"expected_spki_sha256", "opnsense", "certificate_description"},
         "configuration",
         optional_fields={"renew_before_days"},
     )
-    policy_value = _exact_object(
-        value["certificate_policy"],
-        {"expected_spki_sha256", "subject", "dns_sans", "ip_sans"},
-        "certificate_policy",
-    )
-    policy = CertificatePolicy(
-        expected_spki_sha256=policy_value["expected_spki_sha256"],
-        subject=policy_value["subject"],
-        dns_sans=_string_tuple(policy_value["dns_sans"], "dns_sans"),
-        ip_sans=_string_tuple(policy_value["ip_sans"], "ip_sans"),
-    )
-    try:
-        build_unifi_csr_command(policy)
-    except (TypeError, ValueError):
-        raise ProductionConfigurationError("certificate_policy is invalid") from None
+    policy = authority.certificate_policy(value["expected_spki_sha256"])
 
     opnsense = _exact_object(
         value["opnsense"],
@@ -222,45 +129,22 @@ def _parse_config(value) -> ProductionConfig:
                 "opnsense tls_ca_name is invalid"
             ) from None
 
-    try:
-        trusted_ca_name = validate_secure_filename(
-            value["trusted_ca_name"], source_name="Issuing CA file"
-        )
-    except (TypeError, SecureFileError):
-        raise ProductionConfigurationError("trusted_ca_name is invalid") from None
-    lifetime_days = value["lifetime_days"]
     renew_before_days = value.get("renew_before_days", DEFAULT_RENEW_BEFORE_DAYS)
-    digest = value["digest"]
-    if (
-        type(lifetime_days) is not int
-        or not 1 <= lifetime_days <= 397
-        or not isinstance(digest, str)
-        or digest not in {"sha256", "sha384", "sha512"}
-    ):
-        raise ProductionConfigurationError("signing policy is invalid")
     if (
         type(renew_before_days) is not int
         or not 1 <= renew_before_days <= MAX_CERTIFICATE_LIFETIME_DAYS
     ):
         raise ProductionConfigurationError("renewal policy is invalid")
-    live_endpoint, readiness = _parse_live_tls(value["live_tls"])
     return ProductionConfig(
+        authority=authority,
         policy=policy,
         opnsense_base_url=base_url,
         opnsense_timeout_seconds=timeout,
         opnsense_tls_ca_name=tls_ca_name,
-        issuing_ca_description=_safe_text(
-            value["issuing_ca_description"], "issuing_ca_description"
-        ),
         certificate_description=_safe_text(
             value["certificate_description"], "certificate_description"
         ),
-        trusted_ca_name=trusted_ca_name,
-        lifetime_days=lifetime_days,
         renew_before_days=renew_before_days,
-        digest=digest,
-        live_endpoint=live_endpoint,
-        readiness=readiness,
     )
 
 
@@ -284,26 +168,13 @@ def load_production_config() -> ProductionConfig:
         raise ProductionConfigurationError(
             "Renewer configuration is invalid JSON"
         ) from None
-    return _parse_config(value)
+    return _parse_config(value, load_policy())
 
 
-def build_production_unifi_client() -> UnifiClient:
+def build_production_unifi_client(authority: RenewalPolicy) -> UnifiClient:
     """Construct the sole supported production UniFi access path."""
 
-    return UnifiClient(SocketUnifiExecutionBoundary())
-
-
-def _read_trusted_ca(name: str) -> bytes:
-    try:
-        with open_secure_file(name, source_name="Issuing CA file") as file:
-            data = file.read(MAX_TRUST_BUNDLE_BYTES + 1)
-        if len(data) > MAX_TRUST_BUNDLE_BYTES:
-            raise ValueError
-        return validate_installation_ca(data)
-    except Exception:
-        raise ProductionRunError(
-            "Renewer stopped during issuing CA validation"
-        ) from None
+    return UnifiClient(SocketUnifiExecutionBoundary(authority))
 
 
 def _certificate_output(info):
@@ -369,7 +240,7 @@ def run_one_shot(mode: Mode, *, now: datetime | None = None):
         raise ProductionRunError(
             "Renewer stopped during configuration validation"
         ) from None
-    unifi = build_production_unifi_client()
+    unifi = build_production_unifi_client(config.authority)
     try:
         if mode == "inspect":
             state = unifi.inspect_current(config.policy)
@@ -401,15 +272,6 @@ def run_one_shot(mode: Mode, *, now: datetime | None = None):
         raise ProductionRunError(f"Renewer stopped during {mode}") from None
 
     install = mode in {"install", "renew"}
-    if mode == "renew" and (config.live_endpoint is None or config.readiness is None):
-        raise ProductionRunError(
-            f"Renewer stopped because {mode} requires live TLS verification"
-        )
-    trusted_ca_data = _read_trusted_ca(config.trusted_ca_name)
-    if mode == "install" and (config.live_endpoint is None or config.readiness is None):
-        raise ProductionRunError(
-            "Renewer stopped because install requires live TLS verification"
-        )
     try:
         opnsense = OPNsenseClient(
             config.opnsense_base_url,
@@ -425,14 +287,12 @@ def run_one_shot(mode: Mode, *, now: datetime | None = None):
             unifi=unifi,
             opnsense=opnsense,
             policy=config.policy,
-            trusted_ca_data=trusted_ca_data,
-            ca_description=config.issuing_ca_description,
+            trusted_ca_data=config.authority.ca_pem,
+            ca_description=config.authority.issuing_ca_description,
             certificate_description=config.certificate_description,
-            lifetime_days=config.lifetime_days,
-            digest=config.digest,
+            lifetime_days=config.authority.lifetime_days,
+            digest=config.authority.signing_digest,
             install=install,
-            live_endpoint=config.live_endpoint if install else None,
-            readiness=config.readiness if install else ReadinessPolicy(),
         )
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None

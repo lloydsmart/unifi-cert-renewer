@@ -5,6 +5,7 @@ import struct
 from types import SimpleNamespace
 
 import pytest
+from conftest import policy_for
 
 import unifi_executor_client as client_protocol
 import unifi_executor_service as server_protocol
@@ -46,7 +47,8 @@ def test_disposable_client_server_transport_supports_public_inspect_and_csr(
             assert policy == request.policy
             return request.csr_pem
 
-    handler = server_protocol._ProtocolHandler(PublicExecutor)
+    policy = policy_for(installation_material)
+    handler = server_protocol._ProtocolHandler(lambda policy: PublicExecutor(), policy)
 
     class LoopbackConnection(MemoryConnection):
         def connect(self, path):
@@ -56,7 +58,7 @@ def test_disposable_client_server_transport_supports_public_inspect_and_csr(
             incoming = MemoryConnection(value)
             decoded_request = server_protocol._read_message(incoming)
             result = handler.dispatch(decoded_request)
-            self.incoming.extend(frame({"version": 1, "ok": True, "result": result}))
+            self.incoming.extend(frame({"version": 2, "ok": True, "result": result}))
 
         def close(self):
             pass
@@ -95,24 +97,27 @@ def test_disposable_client_server_transport_supports_public_inspect_and_csr(
             )
         ),
     )
-    unifi = UnifiClient(client_protocol.SocketUnifiExecutionBoundary())
+    unifi = UnifiClient(client_protocol.SocketUnifiExecutionBoundary(policy))
 
     assert unifi.inspect_current(request.policy) == request.before
     assert unifi.request_csr(request.policy) == request.csr_pem
 
 
-def test_client_protocol_and_privileged_targets_are_fixed():
-    boundary = client_protocol.SocketUnifiExecutionBoundary()
+def test_client_protocol_and_privileged_targets_are_fixed(installation_material):
+    policy = policy_for(installation_material)
+    boundary = client_protocol.SocketUnifiExecutionBoundary(policy)
 
     assert server_protocol.SocketUnifiExecutionBoundary is type(boundary)
-    assert client_protocol.PROTOCOL_VERSION == server_protocol.PROTOCOL_VERSION == 1
+    assert client_protocol.PROTOCOL_VERSION == server_protocol.PROTOCOL_VERSION == 2
     assert client_protocol._OPERATIONS == server_protocol._OPERATIONS
     assert client_protocol.SOCKET_PATH == "/run/unifi-cert-renewer/executor.sock"
     with pytest.raises(TypeError):
         client_protocol.SocketUnifiExecutionBoundary(socket_path="/tmp/other")
 
 
-def test_client_rejects_unsafe_socket_before_connect(monkeypatch):
+def test_client_rejects_unsafe_socket_before_connect(
+    monkeypatch, installation_material
+):
     events = []
 
     class UnusedConnection:
@@ -147,6 +152,8 @@ def test_client_rejects_unsafe_socket_before_connect(monkeypatch):
     )
 
     with pytest.raises(UnifiOperationError, match="request failed"):
-        client_protocol.SocketUnifiExecutionBoundary().inspect_public_state()
+        client_protocol.SocketUnifiExecutionBoundary(
+            policy_for(installation_material)
+        ).inspect_public_state()
 
     assert events == []

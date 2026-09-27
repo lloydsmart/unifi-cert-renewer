@@ -1,6 +1,6 @@
 """Fixed Unix-socket boundary for the key-owner-local UniFi executor.
 
-The wire protocol is deliberately not extensible: version 1 has five semantic
+The wire protocol is deliberately not extensible: version 2 has five semantic
 operations and every request/response shape is closed.  It never accepts a
 command, executable, argv, alias, service name, pathname, or secret.
 """
@@ -17,15 +17,15 @@ import sys
 import time
 from contextlib import contextmanager
 
+from csr import inspect_csr
+from renewal_policy import load_policy
 from unifi_client import (
     MAX_CERTIFICATE_DER_BYTES,
     MAX_KEYTOOL_OUTPUT_CHARS,
     CertificateImportRequest,
-    CertificatePolicy,
     PublicKeystoreState,
     UnifiClient,
     UnifiOperationError,
-    build_unifi_csr_command,
     inspect_public_keystore_state,
     prepare_certificate_import,
 )
@@ -44,14 +44,16 @@ from unifi_executor_files import (
 
 __all__ = ["SocketUnifiExecutionBoundary", "main"]
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 SOCKET_DIRECTORY = "/run/unifi-cert-renewer"
 SOCKET_PATH = f"{SOCKET_DIRECTORY}/executor.sock"
 SOCKET_LOCK = ".executor-socket.lock"
 MAX_MESSAGE_BYTES = 8 * 1024 * 1024
 SOCKET_TIMEOUT_SECONDS = 300.0
 REQUEST_READ_TIMEOUT_SECONDS = 10.0
-_OPERATIONS = frozenset({"inspect", "generate_csr", "install", "recover", "finalize"})
+_OPERATIONS = frozenset(
+    {"inspect", "generate_csr", "install", "recover", "verify_pending"}
+)
 _RECOVERY_RESULTS = frozenset(
     {
         "no_active_transaction",
@@ -140,68 +142,37 @@ def _decode_state(value):
     return state
 
 
-def _encode_policy(policy):
-    return {
-        "expected_spki_sha256": policy.expected_spki_sha256,
-        "subject": policy.subject,
-        "dns_sans": list(policy.dns_sans),
-        "ip_sans": list(policy.ip_sans),
-    }
-
-
-def _decode_policy(value):
-    value = _exact_dict(
-        value, {"expected_spki_sha256", "subject", "dns_sans", "ip_sans"}
-    )
-    if not isinstance(value["dns_sans"], list) or not isinstance(
-        value["ip_sans"], list
-    ):
-        raise ValueError
-    policy = CertificatePolicy(
-        expected_spki_sha256=value["expected_spki_sha256"],
-        subject=value["subject"],
-        dns_sans=tuple(value["dns_sans"]),
-        ip_sans=tuple(value["ip_sans"]),
-    )
-    # The shared validator fixes and validates alias, paths and command semantics.
-    build_unifi_csr_command(policy)
-    return policy
-
-
 def _encode_import_request(request):
     return {
         "before": _encode_state(request.before),
-        "policy": _encode_policy(request.policy),
         "csr_pem": _encode_binary(request.csr_pem),
         "issued_certificate": _encode_binary(request.issued_certificate),
-        "trusted_ca_data": _encode_binary(request.trusted_ca_data),
-        "lifetime_days": request.lifetime_days,
     }
 
 
-def _decode_import_request(value):
-    value = _exact_dict(
-        value,
-        {
-            "before",
-            "policy",
-            "csr_pem",
-            "issued_certificate",
-            "trusted_ca_data",
-            "lifetime_days",
-        },
-    )
+def _decode_import_request(value, policy):
+    value = _exact_dict(value, {"before", "csr_pem", "issued_certificate"})
+    before = _decode_state(value["before"])
+    observed_spki = inspect_public_keystore_state(before).certificate.spki_sha256
     request = CertificateImportRequest(
-        before=_decode_state(value["before"]),
-        policy=_decode_policy(value["policy"]),
+        before=before,
+        policy=policy.certificate_policy(observed_spki),
         csr_pem=_binary(value["csr_pem"]),
         issued_certificate=_binary(
             value["issued_certificate"], maximum=MAX_CERTIFICATE_DER_BYTES
         ),
-        trusted_ca_data=_binary(value["trusted_ca_data"]),
-        lifetime_days=value["lifetime_days"],
+        trusted_ca_data=policy.ca_pem,
+        lifetime_days=policy.lifetime_days,
     )
-    prepare_certificate_import(request)
+    plan = prepare_certificate_import(request)
+    csr_info = inspect_csr(request.csr_pem)
+    if (
+        csr_info.signature_hash_algorithm != "sha384"
+        or csr_info.signature_algorithm_oid != "1.2.840.113549.1.1.12"
+        or plan.issued.signature_hash_algorithm != policy.signing_digest
+        or plan.issued.signature_algorithm_oid != policy.issued_signature_oid
+    ):
+        raise ValueError
     return request
 
 
@@ -294,26 +265,28 @@ def _inspection_state(inspection, chain):
 class _ProtocolHandler:
     """Server-side fixed operation dispatch; factory injection is test-only."""
 
-    def __init__(self, executor_factory=ProductionUnifiExecutor):
+    def __init__(self, executor_factory=ProductionUnifiExecutor, policy=None):
+        self._policy = load_policy() if policy is None else policy
         self._executor_factory = executor_factory
 
     def dispatch(self, request):
         operation, arguments = _decode_envelope(request)
-        executor = self._executor_factory()
+        executor = self._executor_factory(self._policy)
         if operation in {"inspect", "recover"}:
             _exact_dict(arguments, set())
         if operation == "inspect":
             return {"state": _encode_state(executor.inspect_public_state())}
         if operation == "generate_csr":
-            _exact_dict(arguments, {"policy"})
-            return {
-                "csr_pem": _encode_binary(
-                    executor.generate_csr(_decode_policy(arguments["policy"]))
-                )
-            }
+            _exact_dict(arguments, {"policy_digest", "expected_spki_sha256"})
+            self._require_digest(arguments["policy_digest"])
+            policy = self._policy.certificate_policy(arguments["expected_spki_sha256"])
+            return {"csr_pem": _encode_binary(executor.generate_csr(policy))}
         if operation == "install":
-            _exact_dict(arguments, {"request"})
-            certificate_request = _decode_import_request(arguments["request"])
+            _exact_dict(arguments, {"policy_digest", "request"})
+            self._require_digest(arguments["policy_digest"])
+            certificate_request = _decode_import_request(
+                arguments["request"], self._policy
+            )
             inspection = UnifiClient(executor).install_certificate(certificate_request)
             plan = prepare_certificate_import(certificate_request)
             after = _inspection_state(inspection, plan.certificate_chain_der)
@@ -323,13 +296,15 @@ class _ProtocolHandler:
             if outcome not in _RECOVERY_RESULTS:
                 raise ValueError
             return {"outcome": outcome}
-        _exact_dict(arguments, {"expected_leaf_der"})
-        outcome = executor.finalize_live_verification(
-            _binary(arguments["expected_leaf_der"], maximum=MAX_CERTIFICATE_DER_BYTES)
-        )
+        _exact_dict(arguments, set())
+        outcome = executor.verify_pending()
         if outcome != "renewal_finalized":
             raise ValueError
         return {"outcome": outcome}
+
+    def _require_digest(self, value):
+        if not isinstance(value, str) or value != self._policy.digest:
+            raise ValueError
 
     def handle(self, connection):
         try:

@@ -10,22 +10,24 @@ import struct
 import time
 from contextlib import contextmanager
 
+from renewal_policy import load_policy
 from unifi_client import (
     MAX_CERTIFICATE_DER_BYTES,
     MAX_KEYTOOL_OUTPUT_CHARS,
     CertificateImportRequest,
     PublicKeystoreState,
     UnifiOperationError,
-    build_unifi_csr_command,
     inspect_public_keystore_state,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 SOCKET_DIRECTORY = "/run/unifi-cert-renewer"
 SOCKET_PATH = f"{SOCKET_DIRECTORY}/executor.sock"
 MAX_MESSAGE_BYTES = 8 * 1024 * 1024
 SOCKET_TIMEOUT_SECONDS = 300.0
-_OPERATIONS = frozenset({"inspect", "generate_csr", "install", "recover", "finalize"})
+_OPERATIONS = frozenset(
+    {"inspect", "generate_csr", "install", "recover", "verify_pending"}
+)
 _RECOVERY_RESULTS = frozenset(
     {
         "no_active_transaction",
@@ -99,26 +101,13 @@ def _decode_state(value):
     return state
 
 
-def _encode_policy(policy):
-    build_unifi_csr_command(policy)
-    return {
-        "expected_spki_sha256": policy.expected_spki_sha256,
-        "subject": policy.subject,
-        "dns_sans": list(policy.dns_sans),
-        "ip_sans": list(policy.ip_sans),
-    }
-
-
 def _encode_import_request(request):
     if not isinstance(request, CertificateImportRequest):
         raise ValueError
     return {
         "before": _encode_state(request.before),
-        "policy": _encode_policy(request.policy),
         "csr_pem": _encode_binary(request.csr_pem),
         "issued_certificate": _encode_binary(request.issued_certificate),
-        "trusted_ca_data": _encode_binary(request.trusted_ca_data),
-        "lifetime_days": request.lifetime_days,
     }
 
 
@@ -194,7 +183,8 @@ def _validate_socket_directory():
 class SocketUnifiExecutionBoundary:
     """Expose only the five fixed public executor operations to the renewer."""
 
-    def __init__(self):
+    def __init__(self, policy=None):
+        self._policy = load_policy() if policy is None else policy
         self._exclusive = False
         self._installed = None
 
@@ -243,7 +233,13 @@ class SocketUnifiExecutionBoundary:
 
     def generate_csr(self, policy):
         result = _exact_dict(
-            self._call("generate_csr", {"policy": _encode_policy(policy)}),
+            self._call(
+                "generate_csr",
+                {
+                    "policy_digest": self._policy.digest,
+                    "expected_spki_sha256": policy.expected_spki_sha256,
+                },
+            ),
             {"csr_pem"},
         )
         return _binary(result["csr_pem"])
@@ -254,21 +250,22 @@ class SocketUnifiExecutionBoundary:
         if request.before != expected_before:
             raise UnifiOperationError("stale public import request")
         result = _exact_dict(
-            self._call("install", {"request": _encode_import_request(request)}),
+            self._call(
+                "install",
+                {
+                    "policy_digest": self._policy.digest,
+                    "request": _encode_import_request(request),
+                },
+            ),
             {"state"},
         )
         self._installed = _decode_state(result["state"])
         return 0
 
-    def finalize_live_verification(self, expected_leaf_der):
-        result = _exact_dict(
-            self._call(
-                "finalize", {"expected_leaf_der": _encode_binary(expected_leaf_der)}
-            ),
-            {"outcome"},
-        )
+    def verify_pending(self):
+        result = _exact_dict(self._call("verify_pending", {}), {"outcome"})
         if result["outcome"] != "renewal_finalized":
-            raise UnifiOperationError("unexpected executor finalisation result")
+            raise UnifiOperationError("unexpected executor verification result")
         return result["outcome"]
 
     def recover(self):

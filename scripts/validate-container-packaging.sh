@@ -38,6 +38,8 @@ docker run --rm \
     -ceu '
         test "$(id -u):$(id -g)" = "1000:1000"
         test -f /opt/unifi-cert-renewer/src/unifi_executor_client.py
+        test -f /opt/unifi-cert-renewer/src/renewal_policy.py
+        test -f /opt/unifi-cert-renewer/src/unifi_tls.py
         test -f /opt/unifi-cert-renewer/src/unifi_executor_service.py
         test ! -e /opt/unifi-cert-renewer/src/unifi_executor.py
         test ! -e /opt/unifi-cert-renewer/src/unifi_executor_files.py
@@ -88,6 +90,8 @@ docker run --rm \
     -ceu '
         test ! -e /usr/bin/pebble
         test -f /opt/unifi-cert-renewer/src/unifi_executor.py
+        test -f /opt/unifi-cert-renewer/src/renewal_policy.py
+        test -f /opt/unifi-cert-renewer/src/unifi_tls.py
         test -f /opt/unifi-cert-renewer/src/unifi_executor_files.py
         test -f /opt/unifi-cert-renewer/src/unifi_process.py
         test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-recovery/run

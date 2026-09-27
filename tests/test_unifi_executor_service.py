@@ -2,17 +2,28 @@
 
 import json
 import os
+import socket
+import ssl
 import stat
 import struct
+import threading
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from conftest import metadata
+from conftest import metadata, policy_for, public_der, public_pem
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from test_unifi_executor import install
+from test_unifi_executor import platform as platform
+from test_unifi_tls import _serve_once, _server_context
 
+import unifi_executor as executor
 import unifi_executor_files as executor_files
 import unifi_executor_service as service
+import unifi_tls
 from unifi_client import PublicKeystoreState, UnifiClient, UnifiOperationError
 
 
@@ -61,17 +72,17 @@ class FakeExecutor:
         self.events.append("recover")
         return "no_active_transaction"
 
-    def finalize_live_verification(self, expected_leaf_der):
+    def verify_pending(self):
         self._fail()
-        assert expected_leaf_der == self.plan.certificate_chain_der[0]
-        self.events.append("finalize")
+        self.events.append("verify_pending")
         return "renewal_finalized"
 
 
 @pytest.fixture
 def protocol(installation_material):
     executor = FakeExecutor(installation_material)
-    return executor, service._ProtocolHandler(lambda: executor)
+    policy = policy_for(installation_material)
+    return executor, service._ProtocolHandler(lambda policy: executor, policy)
 
 
 def test_each_required_semantic_operation_is_available(protocol):
@@ -83,14 +94,22 @@ def test_each_required_semantic_operation_is_available(protocol):
 
     generated = handler.dispatch(
         service._request(
-            "generate_csr", {"policy": service._encode_policy(request.policy)}
+            "generate_csr",
+            {
+                "policy_digest": handler._policy.digest,
+                "expected_spki_sha256": request.policy.expected_spki_sha256,
+            },
         )
     )
     assert service._binary(generated["csr_pem"]) == request.csr_pem
 
     installed = handler.dispatch(
         service._request(
-            "install", {"request": service._encode_import_request(request)}
+            "install",
+            {
+                "policy_digest": handler._policy.digest,
+                "request": service._encode_import_request(request),
+            },
         )
     )
     assert service._decode_state(installed["state"]).certificate_chain_der == (
@@ -100,16 +119,7 @@ def test_each_required_semantic_operation_is_available(protocol):
     assert handler.dispatch(service._request("recover", {})) == {
         "outcome": "no_active_transaction"
     }
-    finalized = handler.dispatch(
-        service._request(
-            "finalize",
-            {
-                "expected_leaf_der": service._encode_binary(
-                    executor.plan.certificate_chain_der[0]
-                )
-            },
-        )
-    )
+    finalized = handler.dispatch(service._request("verify_pending", {}))
     assert finalized == {"outcome": "renewal_finalized"}
     assert "install" in executor.events
 
@@ -118,7 +128,7 @@ def test_renewer_side_boundary_preserves_existing_application_semantics(
     protocol, monkeypatch
 ):
     executor, handler = protocol
-    boundary = service.SocketUnifiExecutionBoundary()
+    boundary = service.SocketUnifiExecutionBoundary(handler._policy)
     monkeypatch.setattr(
         boundary,
         "_call",
@@ -131,8 +141,8 @@ def test_renewer_side_boundary_preserves_existing_application_semantics(
     assert client.request_csr(executor.request.policy) == executor.request.csr_pem
     installed = client.install_certificate(executor.request)
     assert installed.certificate == executor.plan.issued
-    client.finalize_live_verification(executor.plan.certificate_chain_der[0])
-    assert executor.events[-1] == "finalize"
+    client.verify_pending()
+    assert executor.events[-1] == "verify_pending"
 
 
 @pytest.mark.parametrize(
@@ -160,8 +170,16 @@ def test_unsupported_or_command_or_path_shaped_requests_are_rejected(protocol, p
 
 def test_policy_cannot_select_alias_service_executable_or_path(protocol):
     executor, handler = protocol
-    policy = service._encode_policy(executor.request.policy)
+    arguments = {
+        "policy_digest": handler._policy.digest,
+        "expected_spki_sha256": executor.request.policy.expected_spki_sha256,
+    }
     for field, value in {
+        "subject": "CN=other",
+        "dns_sans": ["other.test"],
+        "trusted_ca_data": "other",
+        "lifetime_days": 1,
+        "digest": "sha512",
         "alias": "other",
         "service": "other",
         "executable": "/bin/sh",
@@ -169,8 +187,132 @@ def test_policy_cannot_select_alias_service_executable_or_path(protocol):
     }.items():
         with pytest.raises(ValueError):
             handler.dispatch(
-                service._request("generate_csr", {"policy": {**policy, field: value}})
+                service._request("generate_csr", {**arguments, field: value})
             )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("subject", "CN=other.test"),
+        ("dns_sans", ["other.test"]),
+        ("trusted_ca_data", "alternate CA"),
+        ("lifetime_days", 1),
+        ("digest", "sha512"),
+        ("issued_signature_oid", "1.2.840.113549.1.1.13"),
+        ("policy", {"subject": "CN=other.test"}),
+    ],
+)
+def test_worker_authority_fields_reject_before_exclusive_or_shutdown(
+    protocol, field, value
+):
+    executor, handler = protocol
+    request = service._encode_import_request(executor.request)
+    request[field] = value
+    with pytest.raises(ValueError):
+        handler.dispatch(
+            service._request(
+                "install",
+                {
+                    "policy_digest": handler._policy.digest,
+                    "request": request,
+                },
+            )
+        )
+    assert executor.events == []
+
+
+def test_policy_digest_mismatch_rejects_before_exclusive_or_shutdown(protocol):
+    executor, handler = protocol
+    with pytest.raises(ValueError):
+        handler.dispatch(
+            service._request(
+                "install",
+                {
+                    "policy_digest": "0" * 64,
+                    "request": service._encode_import_request(executor.request),
+                },
+            )
+        )
+    assert executor.events == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["subject", "san", "ca", "lifetime", "signature"],
+)
+def test_nonconforming_leaf_rejects_before_exclusive_or_shutdown(
+    protocol, installation_material, change
+):
+    executor, handler = protocol
+    material = installation_material
+    options = {
+        "subject": {"subject": "other.test"},
+        "san": {"sans": [x509.DNSName("other.test")]},
+        "ca": {"signing_key": material.key},
+        "lifetime": {"not_after": material.now + timedelta(days=60)},
+        "signature": {"signing_hash": hashes.SHA384()},
+    }
+    leaf = public_pem(material.issue(**options[change]))
+    request = service._encode_import_request(executor.request)
+    request["issued_certificate"] = service._encode_binary(leaf)
+    with pytest.raises(ValueError):
+        handler.dispatch(
+            service._request(
+                "install",
+                {
+                    "policy_digest": handler._policy.digest,
+                    "request": request,
+                },
+            )
+        )
+    assert executor.events == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"expected_leaf_der": "known-public-leaf"},
+        {"success": True},
+        {"nonce": "known"},
+        {"address": "127.0.0.1"},
+        {"server_hostname": "other.test"},
+        {"trusted_ca_data": "alternate CA"},
+        {"timeout_seconds": 1},
+        {"policy_digest": "0" * 64},
+    ],
+)
+def test_verify_pending_accepts_no_caller_evidence_or_network_policy(
+    protocol, arguments
+):
+    executor, handler = protocol
+    with pytest.raises(ValueError):
+        handler.dispatch(service._request("verify_pending", arguments))
+    assert executor.events == []
+
+
+def test_legacy_finalisation_and_mutation_are_not_accepted(protocol):
+    executor, handler = protocol
+    for request in (
+        {
+            "version": 1,
+            "operation": "finalize",
+            "arguments": {"expected_leaf_der": "known-public-leaf"},
+        },
+        {
+            "version": 2,
+            "operation": "finalize",
+            "arguments": {"expected_leaf_der": "known-public-leaf"},
+        },
+        {
+            "version": 1,
+            "operation": "install",
+            "arguments": {"request": service._encode_import_request(executor.request)},
+        },
+    ):
+        with pytest.raises(ValueError):
+            handler.dispatch(request)
+    assert executor.events == []
 
 
 def _round_trip(handler, payload):
@@ -229,6 +371,138 @@ class Connection:
 def framed(request):
     data = json.dumps(request).encode("ascii")
     return struct.pack("!I", len(data)) + data
+
+
+def _socket_round_trip(handler, request):
+    client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    thread = threading.Thread(
+        target=service._serve_client, args=(handler, server), daemon=True
+    )
+    try:
+        thread.start()
+        client.sendall(framed(request))
+        client.shutdown(socket.SHUT_WR)
+        response = service._read_message(client, deadline=service._monotonic() + 5)
+        thread.join(5)
+        assert not thread.is_alive()
+        return response
+    finally:
+        client.close()
+        server.close()
+
+
+@pytest.mark.parametrize("served", ["exact", "different-trusted"])
+def test_framed_v2_verify_pending_uses_real_executor_and_tls(
+    platform, installation_material, monkeypatch, served
+):
+    p = platform
+    material = installation_material
+    expected = x509.load_pem_x509_certificate(p.request.issued_certificate)
+    certificate = expected if served == "exact" else material.issue()
+    context = _server_context(certificate, material.key)
+    port, tls_thread = _serve_once(context)
+    policy = policy_for(material, port=port)
+    assert policy.ca_pem == public_pem(material.ca)
+    assert policy.endpoint.server_hostname == "unifi.test"
+    p.adapter._policy = policy
+    install(p)
+    assert (p.root / service.JOURNAL).exists()
+    assert (p.root / service.ROLLBACK).read_bytes() == b"old"
+    canonical_inode = (p.root / service.CANONICAL).stat().st_ino
+    expected_der = p.plan.certificate_chain_der[0]
+
+    # The transaction fixture stubs only this observation; restore the real
+    # verifier for the framed service request. Record the real, authenticated
+    # socket result without replacing its chain/hostname or DER checks.
+    monkeypatch.setattr(
+        executor,
+        "verify_prepared_live_tls_certificate",
+        unifi_tls.verify_prepared_live_tls_certificate,
+    )
+    real_connect = unifi_tls._connect_and_get_leaf
+    observed = []
+
+    def observe_connect(endpoint, *, context, deadline):
+        assert endpoint == policy.endpoint
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+        leaf = real_connect(endpoint, context=context, deadline=deadline)
+        observed.append(leaf)
+        return leaf
+
+    monkeypatch.setattr(unifi_tls, "_connect_and_get_leaf", observe_connect)
+    real_write = executor_files._Files.write_journal
+    real_sync = executor_files._Files.sync_file
+    real_remove = executor_files._Files.remove
+    events = []
+
+    def write_journal(self, value):
+        real_write(self, value)
+        events.append(("phase", value["phase"]))
+
+    def sync_file(self, name):
+        real_sync(self, name)
+        events.append(("sync_file", name))
+
+    def remove(self, name):
+        real_remove(self, name)
+        events.append(("remove", name))
+
+    monkeypatch.setattr(executor_files._Files, "write_journal", write_journal)
+    monkeypatch.setattr(executor_files._Files, "sync_file", sync_file)
+    monkeypatch.setattr(executor_files._Files, "remove", remove)
+
+    decoded = []
+    real_decode = service._decode_envelope
+
+    def decode_envelope(value):
+        result = real_decode(value)
+        decoded.append(result)
+        return result
+
+    monkeypatch.setattr(service, "_decode_envelope", decode_envelope)
+    handler = service._ProtocolHandler(policy=policy)
+    assert handler._executor_factory is executor.ProductionUnifiExecutor
+    request = service._request("verify_pending", {})
+    assert request == {"version": 2, "operation": "verify_pending", "arguments": {}}
+    response = _socket_round_trip(handler, request)
+    assert decoded == [("verify_pending", {})]
+    tls_thread.join(3)
+    assert not tls_thread.is_alive()
+    assert observed == [public_der(certificate)]
+    assert (p.root / service.CANONICAL).stat().st_ino == canonical_inode
+    assert (p.root / service.CANONICAL).read_bytes() == b"issued"
+
+    if served == "exact":
+        assert observed[0] == expected_der
+        assert response == {
+            "version": 2,
+            "ok": True,
+            "result": {"outcome": "renewal_finalized"},
+        }
+        assert (
+            events.index(("phase", "live_verified"))
+            < events.index(("sync_file", service.JOURNAL))
+            < events.index(("remove", service.ROLLBACK))
+            < events.index(("remove", service.JOURNAL))
+        )
+        assert not (p.root / service.JOURNAL).exists()
+        assert not (p.root / service.ROLLBACK).exists()
+        assert p.adapter.inspect_public_state().certificate_chain_der == (
+            p.plan.certificate_chain_der
+        )
+    else:
+        assert observed[0] != expected_der
+        assert response == {
+            "version": 2,
+            "ok": False,
+            "error": "executor_operation_failed",
+        }
+        assert events == []
+        assert json.loads((p.root / service.JOURNAL).read_bytes())["phase"] == (
+            "service_resumed_pending_live_verification"
+        )
+        assert (p.root / service.ROLLBACK).read_bytes() == b"old"
 
 
 def test_absolute_request_deadline_stops_trickle_and_next_client_succeeds(
@@ -303,7 +577,9 @@ def test_response_transport_failures_are_connection_local(
     assert service._read_message(Connection(valid.outgoing), deadline=1.0)["ok"] is True
 
 
-@pytest.mark.parametrize("operation", ["inspect", "install", "recover", "finalize"])
+@pytest.mark.parametrize(
+    "operation", ["inspect", "install", "recover", "verify_pending"]
+)
 def test_disconnect_after_operation_does_not_cancel_it_or_stop_server(
     protocol, monkeypatch, operation
 ):
@@ -311,13 +587,12 @@ def test_disconnect_after_operation_does_not_cancel_it_or_stop_server(
     monkeypatch.setattr(service, "_monotonic", lambda: 0.0)
     arguments = {
         "inspect": {},
-        "install": {"request": service._encode_import_request(executor.request)},
-        "recover": {},
-        "finalize": {
-            "expected_leaf_der": service._encode_binary(
-                executor.plan.certificate_chain_der[0]
-            )
+        "install": {
+            "policy_digest": handler._policy.digest,
+            "request": service._encode_import_request(executor.request),
         },
+        "recover": {},
+        "verify_pending": {},
     }[operation]
     disconnected = Connection(
         framed(service._request(operation, arguments)), send_error=BrokenPipeError()
@@ -343,7 +618,7 @@ def test_malformed_and_oversized_messages_get_bounded_generic_error(protocol):
     ):
         response = _round_trip(handler, payload)
         assert response == {
-            "version": 1,
+            "version": 2,
             "ok": False,
             "error": "executor_operation_failed",
         }
@@ -368,7 +643,9 @@ def test_executor_failure_does_not_return_private_state_or_diagnostics(
     installation_material,
 ):
     executor = FakeExecutor(installation_material, failure=True)
-    handler = service._ProtocolHandler(lambda: executor)
+    handler = service._ProtocolHandler(
+        lambda policy: executor, policy_for(installation_material)
+    )
     request = json.dumps(service._request("inspect", {})).encode()
     response = _round_trip(handler, struct.pack("!I", len(request)) + request)
     rendered = json.dumps(response)
@@ -381,7 +658,11 @@ def test_response_contains_only_public_installation_data(protocol):
     executor, handler = protocol
     response = handler.dispatch(
         service._request(
-            "install", {"request": service._encode_import_request(executor.request)}
+            "install",
+            {
+                "policy_digest": handler._policy.digest,
+                "request": service._encode_import_request(executor.request),
+            },
         )
     )
     rendered = json.dumps(response)
@@ -505,7 +786,8 @@ def pending_normalization_state(root):
     canonical.chmod(0o600)
     identity = canonical.stat()
     journal = {
-        "version": 1,
+        "version": 2,
+        "policy_digest": "f" * 64,
         "transaction": "a" * 32,
         "phase": "quiescing",
         "resume": True,
@@ -536,7 +818,8 @@ def live_verified_normalization_state(root):
     canonical.chmod(0o600)
     issued_identity = canonical.stat()
     journal = {
-        "version": 1,
+        "version": 2,
+        "policy_digest": "f" * 64,
         "transaction": "a" * 32,
         "phase": "live_verified",
         "resume": True,
@@ -1116,8 +1399,10 @@ def stat_mode(mode):
     return 0o040000 | mode
 
 
-def test_client_surface_has_no_path_command_alias_or_service_parameters():
-    boundary = service.SocketUnifiExecutionBoundary()
-    assert set(vars(boundary)) == {"_exclusive", "_installed"}
+def test_client_surface_has_no_path_command_alias_or_service_parameters(
+    installation_material,
+):
+    boundary = service.SocketUnifiExecutionBoundary(policy_for(installation_material))
+    assert set(vars(boundary)) == {"_policy", "_exclusive", "_installed"}
     with pytest.raises(TypeError):
         service.SocketUnifiExecutionBoundary(socket_path="/tmp/other")

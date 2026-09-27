@@ -1,5 +1,10 @@
 # Installation and operation runbook
 
+> **Released v0.1.0 procedure:** This runbook records the production-proven
+> protocol v1 deployment. Current source uses protocol v2 and requires the
+> [protected policy and executor verification guide](policy-and-verification-v2.md).
+> Do not combine these v1 configuration commands with a v2 image.
+
 This is the primary operator path for installing a released
 `unifi-cert-renewer` deployment beside an existing LinuxServer UniFi Network
 Application. It covers initial deployment, the first supervised renewal,

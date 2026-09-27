@@ -14,10 +14,10 @@ RUN /opt/unifi-cert-renewer/venv/bin/python -m pip install \
     --no-cache-dir --require-hashes \
     -r /opt/unifi-cert-renewer/requirements.txt
 
-COPY src/certificate.py src/csr.py src/public_key.py src/secure_file.py \
+COPY src/certificate.py src/csr.py src/public_key.py src/renewal_policy.py src/secure_file.py \
     src/tls_policy.py src/unifi_client.py src/unifi_executor.py \
     src/unifi_executor_client.py src/unifi_executor_files.py src/unifi_process.py \
-    src/unifi_executor_service.py /opt/unifi-cert-renewer/src/
+    src/unifi_executor_service.py src/unifi_tls.py /opt/unifi-cert-renewer/src/
 COPY deployment/unifi/root/ /
 
 # LinuxServer uses s6; Ubuntu's bundled Pebble supervisor is not required.

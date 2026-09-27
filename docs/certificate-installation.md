@@ -13,17 +13,17 @@
 5. Issued-leaf validation and canonical leaf-plus-CA reply preparation.
 6. By default, return `prepared`; with explicit `install=True`, dispatch the raw
    request to the injected boundary and verify the exact installed public chain.
-7. With an explicit live endpoint, make a fresh authenticated TLS connection,
-   compare the served leaf exactly, and finalise the pending transaction.
+7. With `install=True`, request the executor's `verify_pending` operation. The
+   executor uses protected endpoint/CA policy, makes a fresh authenticated TLS
+   connection, compares the served leaf exactly, and finalises the transaction.
 
 **Preparation is not a dry run:** it creates a signed certificate in OPNsense.
-Both `prepared` and `installed_pending_live_verification` have
-`renewal_complete=False`. Only successful Stage 7 verification and cleanup
-return `renewal_complete` with `renewal_complete=True`.
+`prepared` has `renewal_complete=False`. Only successful executor-owned
+Stage 7 verification and cleanup return `renewal_complete=True`.
 
 The production executor exists inside the key-owning boundary. A fixed,
-permission-controlled Unix socket exposes only its five semantic operations and
-the LinuxServer s6 dependency graph runs recovery before UniFi initialization or
+permission-controlled protocol-v2 Unix socket exposes only its five semantic
+operations, and the LinuxServer s6 dependency graph runs recovery before UniFi initialization or
 Java startup. No Docker interface, generic command transport, or scheduler is
 provided. The production entrypoint's read-only threshold decision remains
 outside this state-changing orchestration and the executor.
@@ -120,7 +120,9 @@ leaves recovery material intact.
 Production installation is exposed only through the reviewed fixed Unix-socket
 boundary and s6 startup recovery integration described in
 [the production deployment guide](production-deployment.md). The first supervised
-production installation and live finalisation succeeded on 2026-09-15; see the
+production installation and worker-side live finalisation succeeded on
+2026-09-15 under protocol v1; the current executor-owned v2 observation
+awaits production acceptance. See the
 [recorded execution evidence](first-production-renewal.md#first-production-execution-evidence).
 Threshold-based one-shot renewal is implemented in the production entrypoint;
 deployment of an unattended external schedule remains future work.

@@ -65,12 +65,8 @@ class FakeBoundary:
         )
         return self.status
 
-    def finalize_live_verification(self, expected_leaf_der):
-        self.events.append("finalize")
-        assert (
-            expected_leaf_der
-            == prepare_certificate_import(self.request).certificate_chain_der[0]
-        )
+    def verify_pending(self):
+        self.events.append("verify_pending")
         if self.finalization_failure:
             raise self.finalization_failure
         return "renewal_finalized"
