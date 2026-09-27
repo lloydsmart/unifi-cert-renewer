@@ -1,9 +1,8 @@
 """Executor that runs only inside the UniFi key-owning environment.
 
 Production access is provided by the fixed local Unix-socket service in
-``unifi_executor_service``. Live TLS itself remains application-side; this module
-only durably finalises its exact pending transaction. Tests substitute private
-platform primitives against disposable files only.
+``unifi_executor_service``. The executor owns policy and observes live TLS before
+durably finalising its exact pending transaction.
 """
 
 import fcntl
@@ -18,9 +17,10 @@ from contextlib import contextmanager
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 
+from csr import inspect_csr
+from renewal_policy import load_policy
 from secure_file import open_secure_file
 from unifi_client import (
-    MAX_CERTIFICATE_DER_BYTES,
     MAX_KEYTOOL_OUTPUT_CHARS,
     CertificateImportRequest,
     CertificatePolicy,
@@ -43,6 +43,10 @@ from unifi_executor_files import (
     _Files,
 )
 from unifi_process import _run, _Service
+from unifi_tls import (
+    prepare_live_tls_verification,
+    verify_prepared_live_tls_certificate,
+)
 
 _PHASES = {
     "quiescing",
@@ -146,6 +150,7 @@ def _parse_collection(data: bytes) -> PublicKeystoreState:
 def _validate_journal(value):
     fields = {
         "version",
+        "policy_digest",
         "transaction",
         "phase",
         "resume",
@@ -160,7 +165,9 @@ def _validate_journal(value):
         raise UnifiOperationError("invalid recovery journal")
     if (
         type(value["version"]) is not int
-        or value["version"] != 1
+        or value["version"] != 2
+        or not isinstance(value["policy_digest"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", value["policy_digest"]) is None
         or not isinstance(value["transaction"], str)
         or re.fullmatch(r"[0-9a-f]{32}", value["transaction"]) is None
         or not isinstance(value["phase"], str)
@@ -232,7 +239,8 @@ class ProductionUnifiExecutor:
     No caller supplies a path, executable, argv, alias, service name, or secret.
     """
 
-    def __init__(self):
+    def __init__(self, policy=None):
+        self._policy = load_policy() if policy is None else policy
         self._files = None
         self._lock = None
         self._owner = None
@@ -352,6 +360,12 @@ class ProductionUnifiExecutor:
 
     def generate_csr(self, policy: CertificatePolicy) -> bytes:
         command = build_unifi_csr_command(policy)
+        if (policy.subject, policy.dns_sans, policy.ip_sans) != (
+            self._policy.subject,
+            self._policy.dns_sans,
+            self._policy.ip_sans,
+        ):
+            raise UnifiOperationError("CSR policy differs from executor authority")
         with self._locked():
             self._no_transaction()
             before = self._files.status(CANONICAL)
@@ -376,7 +390,12 @@ class ProductionUnifiExecutor:
                 "SHA384withRSA",
             )
             self._files.same(CANONICAL, before)
-            validate_requested_csr(result, policy)
+            csr_info = validate_requested_csr(result, policy)
+            if (
+                csr_info.signature_hash_algorithm != "sha384"
+                or csr_info.signature_algorithm_oid != "1.2.840.113549.1.1.12"
+            ):
+                raise UnifiOperationError("CSR signature differs from executor policy")
             return result
 
     def _phase(self, phase, **changes):
@@ -404,7 +423,8 @@ class ProductionUnifiExecutor:
             if identity.st_nlink != 1:
                 raise UnifiOperationError("unexpected canonical hard link")
             self._journal = {
-                "version": 1,
+                "version": 2,
+                "policy_digest": self._policy.digest,
                 "transaction": uuid.uuid4().hex,
                 "phase": "quiescing",
                 "resume": self._service.running(),
@@ -448,6 +468,19 @@ class ProductionUnifiExecutor:
         if self._journal is None or self._journal["phase"] != "quiesced":
             raise UnifiOperationError("new quiesced transaction required")
         plan = prepare_certificate_import(request)
+        csr_info = inspect_csr(request.csr_pem)
+        if (
+            csr_info.signature_hash_algorithm != "sha384"
+            or csr_info.signature_algorithm_oid != "1.2.840.113549.1.1.12"
+            or request.policy.subject != self._policy.subject
+            or request.policy.dns_sans != self._policy.dns_sans
+            or request.policy.ip_sans != self._policy.ip_sans
+            or request.trusted_ca_data != self._policy.ca_pem
+            or request.lifetime_days != self._policy.lifetime_days
+            or plan.issued.signature_hash_algorithm != self._policy.signing_digest
+            or plan.issued.signature_algorithm_oid != self._policy.issued_signature_oid
+        ):
+            raise UnifiOperationError("certificate differs from executor policy")
         self._service.stopped()
         current = self._collect(CANONICAL)
         if not _same_public(current, request.before) or not _same_public(
@@ -513,59 +546,53 @@ class ProductionUnifiExecutor:
         self._phase("canonical_verified")
         return 0
 
-    def finalize_live_verification(self, expected_leaf_der: bytes) -> str:
-        """Durably accept exact live evidence, then remove recovery artifacts.
-
-        The leaf fingerprint is not an authorization token: it must identify the
-        already-pending issued chain in the executor-owned journal. There is no
-        Boolean success input and no caller-selected transaction or pathname.
-        """
-
-        if (
-            not isinstance(expected_leaf_der, bytes)
-            or not 1 <= len(expected_leaf_der) <= MAX_CERTIFICATE_DER_BYTES
-        ):
-            raise UnifiOperationError("invalid live certificate evidence")
-        try:
-            canonical = x509.load_der_x509_certificate(expected_leaf_der).public_bytes(
-                Encoding.DER
-            )
-        except ValueError:
-            raise UnifiOperationError("invalid live certificate evidence") from None
-        if canonical != expected_leaf_der:
-            raise UnifiOperationError("non-canonical live certificate evidence")
-        fingerprint = hashlib.sha256(canonical).hexdigest()
-
+    def verify_pending(self) -> str:
+        """Observe live TLS from the executor before the durable cleanup barrier."""
         with self._locked():
             if not self._files.exists(JOURNAL):
-                raise UnifiOperationError("no pending transaction to finalise")
+                raise UnifiOperationError("no pending transaction to verify")
             self._journal = _validate_journal(self._files.read_journal())
-            if self._journal["phase"] not in {
-                "service_resumed_pending_live_verification",
-                "live_verified",
-            }:
+            self._require_current_policy()
+            if self._journal["phase"] != "service_resumed_pending_live_verification":
                 raise UnifiOperationError(
                     "transaction is not pending live verification"
                 )
-            if (
-                not self._journal["resume"]
-                or self._journal["issued"] is None
-                or self._journal["issued"]["chain"][0] != fingerprint
-            ):
-                raise UnifiOperationError(
-                    "live certificate does not identify the pending transaction"
-                )
+            if not self._journal["resume"] or self._journal["issued"] is None:
+                raise UnifiOperationError("invalid pending transaction")
             if not self._service.running():
                 raise UnifiOperationError("UniFi service is not running")
-            self._validate_live_verified_files(
-                rollback_optional=self._journal["phase"] == "live_verified"
+            self._validate_live_verified_files(rollback_optional=False)
+            canonical = self._collect(CANONICAL).certificate_chain_der[0]
+            if (
+                hashlib.sha256(canonical).hexdigest()
+                != self._journal["issued"]["chain"][0]
+            ):
+                raise UnifiOperationError(
+                    "canonical leaf differs from pending transaction"
+                )
+            prepared = prepare_live_tls_verification(
+                endpoint=self._policy.endpoint,
+                readiness=self._policy.readiness,
+                trusted_ca_data=self._policy.ca_pem,
             )
-            if self._journal["phase"] != "live_verified":
-                # External success is durable before any recovery object is removed.
-                self._phase("live_verified")
+            verify_prepared_live_tls_certificate(
+                prepared=prepared, expected_leaf_der=canonical
+            )
+            if not self._service.running():
+                raise UnifiOperationError("UniFi service is not running")
+            self._validate_live_verified_files(rollback_optional=False)
+            if self._collect(CANONICAL).certificate_chain_der[0] != canonical:
+                raise UnifiOperationError("canonical leaf changed during verification")
+            self._phase("live_verified")
             self._establish_live_verified_durability()
             self._finish_live_verified()
             return "renewal_finalized"
+
+    def _require_current_policy(self) -> None:
+        if self._journal["policy_digest"] != self._policy.digest:
+            raise UnifiOperationError(
+                "pending transaction policy differs from executor"
+            )
 
     def _establish_live_verified_durability(self) -> None:
         """Re-establish file/content and namespace durability before cleanup.
@@ -627,6 +654,7 @@ class ProductionUnifiExecutor:
                 self._files.sync_directory()
                 return "no_active_transaction"
             self._journal = _validate_journal(self._files.read_journal())
+            self._require_current_policy()
             if self._journal["phase"] == "live_verified":
                 self._establish_live_verified_durability()
                 self._validate_live_verified_files(rollback_optional=True)

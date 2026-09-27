@@ -147,6 +147,7 @@ jobs:
         env:
           RENEWER_IMAGE: local/unifi-cert-renewer:ci
           RENEWER_SECRETS_DIRECTORY: /tmp/unifi-cert-renewer-ci-secrets
+          RENEWAL_POLICY_DIRECTORY: /tmp/unifi-cert-renewer-ci-policy
           UNIFI_NETWORK: unifi-ci
         run: |
           set -euo pipefail

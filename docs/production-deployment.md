@@ -1,5 +1,11 @@
 # Production deployment
 
+> **Release history:** The v0.1.0 configuration and production evidence below
+> use protocol v1. Current source uses protocol v2; follow the
+> [protected policy and verification guide](policy-and-verification-v2.md)
+> for its policy mounts, request shapes, recovery gate and acceptance checks.
+> Do not deploy a v2 image with the v1 configuration below.
+
 This is the detailed deployment and security reference. Operators installing or
 upgrading a released deployment should follow the ordered
 [installation and operation runbook](installation.md).

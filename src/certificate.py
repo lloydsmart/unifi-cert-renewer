@@ -32,11 +32,11 @@ _CERTIFICATE_PEM_RE = re.compile(
     rb"(?:[A-Za-z0-9+/=]+\r?\n)+"
     rb"-----END CERTIFICATE-----[ \t\r\n]*\Z"
 )
-_CERTIFICATE_PEM_BLOCK_RE = re.compile(
-    rb"[ \t\r\n]*-----BEGIN CERTIFICATE-----\r?\n"
-    rb"(?:[A-Za-z0-9+/=]+\r?\n)+"
-    rb"-----END CERTIFICATE-----"
-)
+_PEM_BEGIN = b"-----BEGIN CERTIFICATE-----"
+_PEM_END = b"-----END CERTIFICATE-----"
+_PEM_WHITESPACE = b" \t\r\n"
+_PEM_TRAILING_WHITESPACE = b" \t\r\n\v\f"
+_PEM_BASE64_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 _ALLOWED_SIGNATURE_HASHES = frozenset({"sha256", "sha384", "sha512"})
 _SUPPORTED_RSA_KEY_SIZES = frozenset({2048, 3072, 4096})
 _ALLOWED_SERVER_EKU_PROFILES = frozenset(
@@ -291,6 +291,59 @@ def _load_one_certificate(
         raise IssuedCertificateValidationError(f"{label} is malformed") from None
 
 
+def _validate_trust_pem_structure(data: bytes) -> None:
+    """Validate the existing PEM-bundle grammar with a monotonic byte cursor."""
+
+    position = 0
+    length = len(data)
+    blocks = 0
+    while position < length:
+        while position < length and data[position] in _PEM_WHITESPACE:
+            position += 1
+        if position == length:
+            break
+        # The old final suffix check used bytes.strip(), which also accepted
+        # vertical tab and form feed after the last block, but not between blocks.
+        if blocks and data[position] in b"\v\f":
+            while position < length and data[position] in _PEM_TRAILING_WHITESPACE:
+                position += 1
+            if position == length:
+                break
+            raise IssuedCertificateValidationError("trusted CA data is malformed")
+        if not data.startswith(_PEM_BEGIN, position):
+            raise IssuedCertificateValidationError("trusted CA data is malformed")
+        position += len(_PEM_BEGIN)
+        if data.startswith(b"\r\n", position):
+            position += 2
+        elif data.startswith(b"\n", position):
+            position += 1
+        else:
+            raise IssuedCertificateValidationError("trusted CA data is malformed")
+
+        body_lines = 0
+        while not data.startswith(_PEM_END, position):
+            newline = data.find(b"\n", position)
+            if newline < 0:
+                raise IssuedCertificateValidationError("trusted CA data is malformed")
+            line_end = (
+                newline - 1
+                if newline > position and data[newline - 1] == 13
+                else newline
+            )
+            if line_end == position or any(
+                byte not in _PEM_BASE64_BYTES for byte in data[position:line_end]
+            ):
+                raise IssuedCertificateValidationError("trusted CA data is malformed")
+            body_lines += 1
+            position = newline + 1
+        if body_lines == 0:
+            raise IssuedCertificateValidationError("trusted CA data is malformed")
+        position += len(_PEM_END)
+        blocks += 1
+    if blocks == 0:
+        raise IssuedCertificateValidationError("trusted CA data is malformed")
+
+
 def _load_trust_certificates(trusted_ca_data: bytes) -> list[x509.Certificate]:
     if not isinstance(trusted_ca_data, bytes):
         raise TypeError("trusted CA data must be bytes")
@@ -300,16 +353,7 @@ def _load_trust_certificates(trusted_ca_data: bytes) -> list[x509.Certificate]:
         raise IssuedCertificateValidationError("trusted CA data exceeds the size limit")
     try:
         if trusted_ca_data.lstrip().startswith(b"-----BEGIN"):
-            position = 0
-            while position < len(trusted_ca_data):
-                match = _CERTIFICATE_PEM_BLOCK_RE.match(trusted_ca_data, position)
-                if match is None:
-                    if trusted_ca_data[position:].strip():
-                        raise IssuedCertificateValidationError(
-                            "trusted CA data is malformed"
-                        )
-                    break
-                position = match.end()
+            _validate_trust_pem_structure(trusted_ca_data)
             certificates = x509.load_pem_x509_certificates(trusted_ca_data)
         else:
             certificates = [x509.load_der_x509_certificate(trusted_ca_data)]

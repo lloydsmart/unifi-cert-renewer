@@ -13,8 +13,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from conftest import metadata, public_der, public_pem
+from conftest import metadata, policy_for, public_pem
 from cryptography import x509
+from test_unifi_tls import _serve_once, _server_context
 
 import unifi_executor as executor
 import unifi_executor_files as filesystem
@@ -25,11 +26,17 @@ from unifi_client import (
     prepare_certificate_import,
 )
 from unifi_executor_files import CANONICAL, JOURNAL, JOURNAL_NEW, ROLLBACK, STAGE
+from unifi_tls import LiveTLSEndpoint, ReadinessPolicy
 
 
 @pytest.fixture
 def platform(tmp_path, monkeypatch, installation_material):
     request = installation_material.request
+    policy = policy_for(installation_material)
+    monkeypatch.setattr(executor, "load_policy", lambda: policy)
+    monkeypatch.setattr(
+        executor, "verify_prepared_live_tls_certificate", lambda **kwargs: "verified"
+    )
     plan = prepare_certificate_import(request)
     files = object.__new__(filesystem._Files)
     files.uid, files.gid = os.getuid(), os.getgid()
@@ -124,6 +131,7 @@ def platform(tmp_path, monkeypatch, installation_material):
     return SimpleNamespace(
         root=tmp_path,
         request=request,
+        policy=policy,
         plan=plan,
         events=events,
         service=service,
@@ -231,7 +239,7 @@ def test_exact_pending_leaf_finalises_only_after_durable_live_state(platform):
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(filesystem._Files, "write_journal", journal)
         patch.setattr(filesystem._Files, "remove", unlink)
-        result = p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        result = p.adapter.verify_pending()
 
     assert result == "renewal_finalized"
     assert observed.index(("phase", "live_verified")) < observed.index(
@@ -242,18 +250,133 @@ def test_exact_pending_leaf_finalises_only_after_durable_live_state(platform):
     assert p.events.count("import") == 1
 
 
-def test_wrong_leaf_never_finalises_unrelated_pending_transaction(
-    platform, installation_material
+def test_failed_tls_observation_never_finalises_pending_transaction(
+    platform, monkeypatch
 ):
     p = platform
     install(p)
-    wrong = installation_material.issue(key=installation_material.ca_key)
+
+    def reject(**kwargs):
+        raise ValueError("wrong live leaf")
+
+    monkeypatch.setattr(executor, "verify_prepared_live_tls_certificate", reject)
     with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(public_der(wrong))
+        p.adapter.verify_pending()
     assert (p.root / ROLLBACK).exists()
     assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == (
         "service_resumed_pending_live_verification"
     )
+
+
+@pytest.mark.parametrize(
+    "served",
+    ["exact", "old", "different-trusted", "untrusted", "hostname-mismatch"],
+)
+def test_executor_observes_real_local_tls_before_cleanup(
+    platform, installation_material, served
+):
+    p = platform
+    material = installation_material
+    install(p)
+    if served == "exact":
+        certificate = x509.load_pem_x509_certificate(p.request.issued_certificate)
+        key = material.key
+    elif served == "old":
+        certificate = x509.load_der_x509_certificate(
+            p.request.before.certificate_chain_der[0]
+        )
+        key = material.key
+    elif served == "different-trusted":
+        certificate = material.issue()
+        key = material.key
+    elif served == "hostname-mismatch":
+        certificate = material.issue(
+            subject="other.test", sans=[x509.DNSName("other.test")]
+        )
+        key = material.key
+    else:
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        certificate = material.issue(
+            key=key,
+            issuer=x509.Name.from_rfc4514_string("CN=Other root"),
+            signing_key=key,
+        )
+    context = _server_context(certificate, key)
+    port, thread = _serve_once(context)
+    p.adapter._policy = replace(
+        p.policy,
+        endpoint=LiveTLSEndpoint("127.0.0.1", "unifi.test", port),
+        readiness=ReadinessPolicy(2, 1, 0, 1),
+    )
+    # Undo the transaction fixture's success stub for the security-critical observation.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            executor,
+            "verify_prepared_live_tls_certificate",
+            __import__("unifi_tls").verify_prepared_live_tls_certificate,
+        )
+        if served == "exact":
+            assert p.adapter.verify_pending() == "renewal_finalized"
+        else:
+            with pytest.raises(UnifiOperationError):
+                p.adapter.verify_pending()
+    thread.join(2)
+    if served == "exact":
+        assert not (p.root / JOURNAL).exists()
+        assert not (p.root / ROLLBACK).exists()
+    else:
+        assert (p.root / JOURNAL).exists()
+        assert (p.root / ROLLBACK).exists()
+
+
+def test_executor_tls_timeout_retains_pending_recovery(platform):
+    p = platform
+    install(p)
+    p.adapter._policy = replace(
+        p.policy,
+        endpoint=LiveTLSEndpoint("127.0.0.1", "unifi.test", 1),
+        readiness=ReadinessPolicy(0.05, 0.02, 0, 2),
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            executor,
+            "verify_prepared_live_tls_certificate",
+            __import__("unifi_tls").verify_prepared_live_tls_certificate,
+        )
+        with pytest.raises(UnifiOperationError):
+            p.adapter.verify_pending()
+    assert (p.root / JOURNAL).exists()
+    assert (p.root / ROLLBACK).exists()
+
+
+def test_changed_policy_blocks_verification_and_recovery(platform):
+    p = platform
+    install(p)
+    p.adapter._policy = replace(p.policy, digest="0" * 64)
+    with pytest.raises(UnifiOperationError):
+        p.adapter.verify_pending()
+    with pytest.raises(UnifiOperationError):
+        p.adapter.recover()
+    assert (p.root / JOURNAL).exists()
+    assert (p.root / ROLLBACK).exists()
+
+
+def test_v1_journal_cannot_gain_trusted_completion(platform):
+    p = platform
+    install(p)
+    journal = json.loads((p.root / JOURNAL).read_bytes())
+    journal["version"] = 1
+    journal.pop("policy_digest")
+    journal["phase"] = "live_verified"
+    (p.root / JOURNAL).write_text(json.dumps(journal))
+    with pytest.raises(UnifiOperationError):
+        p.adapter.recover()
+    with pytest.raises(UnifiOperationError):
+        p.adapter.verify_pending()
+    assert (p.root / JOURNAL).exists()
+    assert (p.root / ROLLBACK).exists()
 
 
 def test_failed_live_verified_journal_write_preserves_recovery(platform, monkeypatch):
@@ -268,7 +391,7 @@ def test_failed_live_verified_journal_write_preserves_recovery(platform, monkeyp
 
     monkeypatch.setattr(filesystem._Files, "write_journal", fail)
     with pytest.raises(UnifiOperationError) as raised:
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.verify_pending()
     assert "synthetic" not in str(raised.value)
     assert (p.root / ROLLBACK).exists()
     assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == (
@@ -297,7 +420,7 @@ def test_finalisation_cleanup_failure_recovers_idempotently(
 
     monkeypatch.setattr(filesystem._Files, "remove", fail_once)
     with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.verify_pending()
     assert failed
     outcome = p.adapter.recover()
     assert outcome in {"renewal_finalized", "no_active_transaction"}
@@ -318,19 +441,18 @@ def test_pending_phase_cannot_infer_verification_from_missing_rollback(platform)
 
 def test_boolean_or_initially_down_transaction_cannot_be_finalised(platform):
     p = platform
-    with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(True)
+    with pytest.raises(TypeError):
+        p.adapter.verify_pending(True)
     p.service.up = False
     install(p)
     with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.verify_pending()
     assert (p.root / ROLLBACK).exists()
     assert (p.root / JOURNAL).exists()
 
 
-@pytest.mark.parametrize("operation", ["recover", "finalize"])
 def test_readable_live_verified_requires_fresh_durability_barrier_before_cleanup(
-    platform, monkeypatch, operation
+    platform, monkeypatch
 ):
     p = platform
     install(p)
@@ -352,7 +474,7 @@ def test_readable_live_verified_requires_fresh_durability_barrier_before_cleanup
 
     monkeypatch.setattr(filesystem._Files, "sync_directory", fail_initial_barrier)
     with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.verify_pending()
     assert replacement_became_readable
     assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == "live_verified"
     assert (p.root / ROLLBACK).exists()
@@ -374,10 +496,7 @@ def test_readable_live_verified_requires_fresh_durability_barrier_before_cleanup
     monkeypatch.setattr(filesystem._Files, "sync_directory", fail_recovery_barrier)
     monkeypatch.setattr(filesystem._Files, "remove", observe_remove)
     with pytest.raises(UnifiOperationError):
-        if operation == "recover":
-            p.adapter.recover()
-        else:
-            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.recover()
     assert recovery_barrier_attempted
     assert rollback_unlinked is False
     assert (p.root / ROLLBACK).exists()
@@ -404,19 +523,16 @@ def test_direct_finalisation_retry_completes_partial_cleanup(platform, monkeypat
 
     monkeypatch.setattr(filesystem._Files, "remove", interrupt_after_unlink)
     with pytest.raises(UnifiOperationError):
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+        p.adapter.verify_pending()
     assert failed
     assert not (p.root / ROLLBACK).exists()
     assert json.loads((p.root / JOURNAL).read_bytes())["phase"] == "live_verified"
 
-    assert (
-        p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
-        == "renewal_finalized"
-    )
+    assert p.adapter.recover() == "renewal_finalized"
     assert not (p.root / JOURNAL).exists()
 
 
-@pytest.mark.parametrize("operation", ["recover", "finalize"])
+@pytest.mark.parametrize("operation", ["recover", "verify_pending"])
 @pytest.mark.parametrize(
     "corruption",
     [
@@ -450,7 +566,7 @@ def test_impossible_live_verified_journal_fails_closed(platform, operation, corr
         if operation == "recover":
             p.adapter.recover()
         else:
-            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+            p.adapter.verify_pending()
     assert (p.root / ROLLBACK).exists()
     assert (p.root / JOURNAL).exists()
     assert (p.root / CANONICAL).read_bytes() == b"issued"
@@ -474,7 +590,7 @@ def test_live_verified_recovery_rejects_changed_files_and_unexpected_artifacts(
     assert (p.root / JOURNAL).exists()
 
 
-@pytest.mark.parametrize("operation", ["recover", "finalize"])
+@pytest.mark.parametrize("operation", ["recover", "verify_pending"])
 @pytest.mark.parametrize("target", [CANONICAL, ROLLBACK])
 def test_live_verified_rejects_unexpected_keystore_hardlinks(
     platform, operation, target
@@ -489,7 +605,7 @@ def test_live_verified_rejects_unexpected_keystore_hardlinks(
         if operation == "recover":
             p.adapter.recover()
         else:
-            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+            p.adapter.verify_pending()
     assert extra.exists()
     assert (p.root / ROLLBACK).exists()
     assert (p.root / JOURNAL).exists()
@@ -736,17 +852,20 @@ def test_service_failure_never_returns_success(platform, monkeypatch, point):
 def test_stale_state_after_stop_is_rejected(platform, monkeypatch):
     p = platform
     original = executor._Service.stop
+    old_inode = (p.root / CANONICAL).stat().st_ino
 
     def stop(self):
         original(self)
         path = p.root / CANONICAL
-        path.unlink()
-        path.write_bytes(b"old")
-        path.chmod(0o600)
+        replacement = p.root / "replacement"
+        replacement.write_bytes(b"old")
+        replacement.chmod(0o600)
+        os.replace(replacement, path)
 
     monkeypatch.setattr(executor._Service, "stop", stop)
     with pytest.raises(UnifiOperationError):
         install(p)
+    assert (p.root / CANONICAL).stat().st_ino != old_inode
     assert "import" not in p.events
 
 
@@ -1359,7 +1478,7 @@ def files(*args):
 executor._Files = files
 executor._local_identity = lambda: (os.getuid(), os.getgid())
 try:
-    executor.ProductionUnifiExecutor().inspect_public_state()
+    executor.ProductionUnifiExecutor(policy=object()).inspect_public_state()
 except UnifiOperationError:
     sys.exit(0)
 sys.exit(1)

@@ -22,6 +22,10 @@ services:
         source: ${RENEWER_SECRETS_DIRECTORY:?set RENEWER_SECRETS_DIRECTORY}
         target: /run/secrets
         read_only: true
+      - type: bind
+        source: ${RENEWAL_POLICY_DIRECTORY:?set RENEWAL_POLICY_DIRECTORY}
+        target: /run/unifi-cert-renewer-policy
+        read_only: true
     networks:
       - unifi
     command:

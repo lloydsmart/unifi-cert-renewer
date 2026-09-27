@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import policy_for
 from cryptography.hazmat.primitives import serialization
 
 import production_renewer
@@ -12,44 +13,26 @@ import secure_file
 from unifi_cert_renewer import InstallationStageResult
 from unifi_client import PublicKeystoreState, UnifiClient, prepare_certificate_import
 from unifi_executor_client import SocketUnifiExecutionBoundary
-from unifi_tls import LiveTLSEndpoint
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def config_value(policy):
     return {
-        "certificate_policy": {
-            "expected_spki_sha256": policy.expected_spki_sha256,
-            "subject": policy.subject,
-            "dns_sans": list(policy.dns_sans),
-            "ip_sans": list(policy.ip_sans),
-        },
+        "expected_spki_sha256": policy.expected_spki_sha256,
         "opnsense": {
             "base_url": "https://opnsense.test",
             "timeout_seconds": 30,
             "tls_ca_name": "opnsense-ca.pem",
         },
-        "issuing_ca_description": "Internal CA",
         "certificate_description": "UniFi HTTPS certificate",
-        "trusted_ca_name": "issuing-ca.pem",
-        "lifetime_days": 30,
-        "digest": "sha384",
-        "live_tls": {
-            "address": "192.0.2.10",
-            "server_hostname": "unifi.test",
-            "port": 8443,
-            "timeout_seconds": 60,
-            "attempt_timeout_seconds": 5,
-            "retry_delay_seconds": 0.5,
-            "max_attempts": 120,
-        },
     }
 
 
 def parsed_config(installation_material):
     return production_renewer._parse_config(
-        config_value(installation_material.request.policy)
+        config_value(installation_material.request.policy),
+        policy_for(installation_material),
     )
 
 
@@ -64,12 +47,14 @@ def public_state_expiring_at(installation_material, not_valid_after):
     )
 
 
-def test_production_path_constructs_fixed_socket_boundary():
-    client = production_renewer.build_production_unifi_client()
+def test_production_path_constructs_fixed_socket_boundary(installation_material):
+    client = production_renewer.build_production_unifi_client(
+        policy_for(installation_material)
+    )
 
     assert isinstance(client, UnifiClient)
     assert isinstance(client._boundary, SocketUnifiExecutionBoundary)
-    assert set(vars(client._boundary)) == {"_exclusive", "_installed"}
+    assert set(vars(client._boundary)) == {"_policy", "_exclusive", "_installed"}
 
 
 def test_loads_strict_configuration_from_fixed_secure_file(
@@ -82,13 +67,15 @@ def test_loads_strict_configuration_from_fixed_secure_file(
     )
     config_file.chmod(0o644)
 
+    monkeypatch.setattr(
+        production_renewer, "load_policy", lambda: policy_for(installation_material)
+    )
     config = production_renewer.load_production_config()
 
     assert config.policy == installation_material.request.policy
     assert config.opnsense_base_url == "https://opnsense.test"
-    assert config.trusted_ca_name == "issuing-ca.pem"
+    assert config.authority == policy_for(installation_material)
     assert config.renew_before_days == 30
-    assert config.live_endpoint == LiveTLSEndpoint("192.0.2.10", "unifi.test", 8443)
 
 
 @pytest.mark.parametrize("renew_before_days", [1, 45, 397])
@@ -97,7 +84,10 @@ def test_accepts_explicit_renewal_window(installation_material, renew_before_day
     value["renew_before_days"] = renew_before_days
 
     assert (
-        production_renewer._parse_config(value).renew_before_days == renew_before_days
+        production_renewer._parse_config(
+            value, policy_for(installation_material)
+        ).renew_before_days
+        == renew_before_days
     )
 
 
@@ -109,29 +99,21 @@ def test_rejects_invalid_renewal_window(installation_material, renew_before_days
     with pytest.raises(
         production_renewer.ProductionConfigurationError, match="renewal policy"
     ):
-        production_renewer._parse_config(value)
+        production_renewer._parse_config(value, policy_for(installation_material))
 
 
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
         (lambda value: value.update(extra="rejected"), "fields"),
-        (
-            lambda value: value["certificate_policy"].update(
-                expected_spki_sha256="not-a-fingerprint"
-            ),
-            "certificate_policy",
-        ),
+        (lambda value: value.update(expected_spki_sha256="bad"), "observed public key"),
         (
             lambda value: value["opnsense"].update(base_url="http://unsafe.example"),
             "base_url",
         ),
-        (lambda value: value.update(trusted_ca_name="../outside"), "trusted_ca_name"),
-        (lambda value: value.update(digest="md5"), "signing policy"),
-        (
-            lambda value: value["live_tls"].update(address="unsafe\nmarker"),
-            "live_tls",
-        ),
+        (lambda value: value.update(trusted_ca_name="../outside"), "fields"),
+        (lambda value: value.update(digest="md5"), "fields"),
+        (lambda value: value.update(subject="CN=other"), "fields"),
     ],
 )
 def test_rejects_unsafe_configuration_without_reflecting_values(
@@ -139,13 +121,8 @@ def test_rejects_unsafe_configuration_without_reflecting_values(
 ):
     value = config_value(installation_material.request.policy)
     mutate(value)
-
-    with pytest.raises(
-        production_renewer.ProductionConfigurationError, match=message
-    ) as raised:
-        production_renewer._parse_config(value)
-
-    assert "unsafe\nmarker" not in str(raised.value)
+    with pytest.raises(ValueError, match=message) as raised:
+        production_renewer._parse_config(value, policy_for(installation_material))
     assert "../outside" not in str(raised.value)
 
 
@@ -214,7 +191,9 @@ def test_public_modes_use_only_fixed_socket_client(
 
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", PublicClient
+        production_renewer,
+        "build_production_unifi_client",
+        lambda authority: PublicClient(),
     )
 
     result = production_renewer.run_one_shot(mode)
@@ -242,10 +221,7 @@ def test_state_changing_modes_call_existing_orchestration_once(
 
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: unifi
-    )
-    monkeypatch.setattr(
-        production_renewer, "_read_trusted_ca", lambda name: b"trusted-ca"
+        production_renewer, "build_production_unifi_client", lambda authority: unifi
     )
     monkeypatch.setattr(
         production_renewer, "OPNsenseClient", lambda *args, **kwargs: opnsense
@@ -263,7 +239,7 @@ def test_state_changing_modes_call_existing_orchestration_once(
     assert calls[0]["unifi"] is unifi
     assert calls[0]["opnsense"] is opnsense
     assert calls[0]["install"] is (mode == "install")
-    assert (calls[0]["live_endpoint"] is not None) is (mode == "install")
+    assert calls[0]["trusted_ca_data"] == config.authority.ca_pem
 
 
 @pytest.mark.parametrize(
@@ -306,12 +282,9 @@ def test_renew_not_due_is_read_only(installation_material, monkeypatch):
 
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", ReadOnlyClient
-    )
-    monkeypatch.setattr(
         production_renewer,
-        "_read_trusted_ca",
-        lambda name: pytest.fail("issuing CA must not be read when renewal is not due"),
+        "build_production_unifi_client",
+        lambda authority: ReadOnlyClient(),
     )
     monkeypatch.setattr(
         production_renewer,
@@ -356,14 +329,7 @@ def test_renew_inspection_failure_stops_before_signing(
     monkeypatch.setattr(
         production_renewer,
         "build_production_unifi_client",
-        InvalidInspectionClient,
-    )
-    monkeypatch.setattr(
-        production_renewer,
-        "_read_trusted_ca",
-        lambda name: pytest.fail(
-            "issuing CA must not be read after inspection failure"
-        ),
+        lambda authority: InvalidInspectionClient(),
     )
     monkeypatch.setattr(
         production_renewer,
@@ -408,10 +374,7 @@ def test_due_renew_calls_existing_installation_orchestration_once(
     unifi = DueClient()
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: unifi
-    )
-    monkeypatch.setattr(
-        production_renewer, "_read_trusted_ca", lambda name: b"trusted-ca"
+        production_renewer, "build_production_unifi_client", lambda authority: unifi
     )
     monkeypatch.setattr(
         production_renewer, "OPNsenseClient", lambda *args, **kwargs: opnsense
@@ -429,14 +392,12 @@ def test_due_renew_calls_existing_installation_orchestration_once(
         "unifi": unifi,
         "opnsense": opnsense,
         "policy": config.policy,
-        "trusted_ca_data": b"trusted-ca",
-        "ca_description": config.issuing_ca_description,
+        "trusted_ca_data": config.authority.ca_pem,
+        "ca_description": config.authority.issuing_ca_description,
         "certificate_description": config.certificate_description,
-        "lifetime_days": config.lifetime_days,
-        "digest": config.digest,
+        "lifetime_days": config.authority.lifetime_days,
+        "digest": config.authority.signing_digest,
         "install": True,
-        "live_endpoint": config.live_endpoint,
-        "readiness": config.readiness,
     }
     assert output["mode"] == "renew"
     assert output["state"] == "renewal_complete"
@@ -462,10 +423,7 @@ def test_direct_install_does_not_apply_renewal_threshold(
     calls = []
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: object()
-    )
-    monkeypatch.setattr(
-        production_renewer, "_read_trusted_ca", lambda name: b"trusted-ca"
+        production_renewer, "build_production_unifi_client", lambda authority: object()
     )
     monkeypatch.setattr(
         production_renewer, "OPNsenseClient", lambda *args, **kwargs: object()
@@ -483,79 +441,14 @@ def test_direct_install_does_not_apply_renewal_threshold(
     assert output["mode"] == "install"
 
 
-def test_install_requires_live_verification_before_api_or_mutation(
-    installation_material, monkeypatch
-):
-    config = replace(
-        parsed_config(installation_material), live_endpoint=None, readiness=None
-    )
-    monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
-    monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: object()
-    )
-    monkeypatch.setattr(
-        production_renewer, "_read_trusted_ca", lambda name: b"trusted-ca"
-    )
-    monkeypatch.setattr(
-        production_renewer,
-        "OPNsenseClient",
-        lambda *args, **kwargs: pytest.fail("API client must not be constructed"),
-    )
-
-    with pytest.raises(
-        production_renewer.ProductionRunError, match="requires live TLS"
-    ):
-        production_renewer.run_one_shot("install")
-
-
-def test_due_renew_requires_live_verification_before_ca_api_or_mutation(
-    installation_material, monkeypatch
-):
-    config = replace(
-        parsed_config(installation_material), live_endpoint=None, readiness=None
-    )
-    state = public_state_expiring_at(installation_material, installation_material.now)
-
-    class DueClient:
-        def inspect_current(self, policy):
-            return state
-
-    monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
-    monkeypatch.setattr(production_renewer, "build_production_unifi_client", DueClient)
-    monkeypatch.setattr(
-        production_renewer,
-        "_read_trusted_ca",
-        lambda name: pytest.fail("issuing CA must not be read without live TLS"),
-    )
-    monkeypatch.setattr(
-        production_renewer,
-        "OPNsenseClient",
-        lambda *args, **kwargs: pytest.fail("API client must not be constructed"),
-    )
-    monkeypatch.setattr(
-        production_renewer,
-        "run_to_installation",
-        lambda **kwargs: pytest.fail("installation must not be attempted"),
-    )
-
-    with pytest.raises(
-        production_renewer.ProductionRunError,
-        match="renew requires live TLS verification",
-    ):
-        production_renewer.run_one_shot("renew", now=installation_material.now)
-
-
 def test_missing_private_api_secrets_are_safely_normalized(
     installation_material, monkeypatch, tmp_path
 ):
     config = parsed_config(installation_material)
-    ca_file = tmp_path / config.trusted_ca_name
-    ca_file.write_bytes(installation_material.request.trusted_ca_data)
-    ca_file.chmod(0o644)
     monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(tmp_path))
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: object()
+        production_renewer, "build_production_unifi_client", lambda authority: object()
     )
 
     with pytest.raises(
@@ -571,9 +464,6 @@ def test_unsafe_api_secret_permissions_are_safely_normalized(
     installation_material, monkeypatch, tmp_path
 ):
     config = replace(parsed_config(installation_material), opnsense_tls_ca_name=None)
-    ca_file = tmp_path / config.trusted_ca_name
-    ca_file.write_bytes(installation_material.request.trusted_ca_data)
-    ca_file.chmod(0o644)
     api_key = tmp_path / "opnsense-api-key"
     api_key.write_text("not-logged", encoding="utf-8")
     api_key.chmod(0o644)
@@ -583,7 +473,7 @@ def test_unsafe_api_secret_permissions_are_safely_normalized(
     monkeypatch.setattr(secure_file, "SECURE_FILE_ROOT", str(tmp_path))
     monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
     monkeypatch.setattr(
-        production_renewer, "build_production_unifi_client", lambda: object()
+        production_renewer, "build_production_unifi_client", lambda authority: object()
     )
 
     with pytest.raises(
@@ -606,10 +496,16 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
     assert "src/unifi_executor.py" not in dockerfile
     assert "src/unifi_executor_files.py" not in dockerfile
     assert "src/unifi_process.py" not in dockerfile
+    assert "src/renewal_policy.py" in dockerfile
+    executor_dockerfile = (REPOSITORY_ROOT / "deployment/unifi/Dockerfile").read_text()
+    assert "src/renewal_policy.py" in executor_dockerfile
+    assert "src/unifi_tls.py" in executor_dockerfile
     assert 'user: "1000:1000"' in compose
     assert '      - "984"' in compose
     assert "source: /run/unifi-cert-renewer" in compose
     assert "target: /run/unifi-cert-renewer" in compose
+    assert "target: /run/unifi-cert-renewer-policy" in compose
+    assert "read_only: true" in compose
     assert "cap_drop:\n      - ALL" in compose
     assert "no-new-privileges:true" in compose
     for source in (
@@ -618,6 +514,7 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
         "unifi_cert_renewer.py",
         "unifi_executor_client.py",
         "unifi_tls.py",
+        "renewal_policy.py",
     ):
         assert f"!src/{source}" in dockerignore
     for forbidden in (

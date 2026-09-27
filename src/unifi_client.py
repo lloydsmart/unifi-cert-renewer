@@ -148,8 +148,8 @@ class UnifiExecutionBoundary(Protocol):
         """Feed reply_pem to stdin; return exit status only, never diagnostics."""
         ...
 
-    def finalize_live_verification(self, expected_leaf_der: bytes) -> str:
-        """Finalise only the pending transaction for this exact public leaf."""
+    def verify_pending(self) -> str:
+        """Ask the key-owner executor to observe and verify its pending TLS leaf."""
         ...
 
 
@@ -352,13 +352,12 @@ class UnifiClient:
         except Exception:
             raise UnifiOperationError(f"UniFi {stage} failed") from None
 
-    def finalize_live_verification(self, expected_leaf_der: bytes) -> None:
-        """Request narrow cleanup after application-side exact TLS verification."""
-
+    def verify_pending(self) -> None:
+        """Request trusted executor observation; caller supplies no TLS evidence."""
         try:
-            outcome = self._boundary.finalize_live_verification(expected_leaf_der)
+            outcome = self._boundary.verify_pending()
             if outcome != "renewal_finalized":
-                raise UnifiOperationError("unexpected finalisation result")
+                raise UnifiOperationError("unexpected verification result")
         except Exception:
             raise UnifiOperationError(
                 "UniFi live-verification finalisation failed"

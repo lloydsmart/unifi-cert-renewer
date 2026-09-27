@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -8,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from csr import inspect_csr
+from renewal_policy import parse_policy
 from unifi_client import (
     CertificateImportRequest,
     CertificatePolicy,
@@ -63,6 +65,7 @@ class InstallationMaterial:
         not_after=None,
         issuer=None,
         signing_key=None,
+        signing_hash=None,
     ):
         return (
             x509.CertificateBuilder()
@@ -90,7 +93,7 @@ class InstallationMaterial:
                 ),
                 False,
             )
-            .sign(signing_key or self.ca_key, hashes.SHA256())
+            .sign(signing_key or self.ca_key, signing_hash or hashes.SHA256())
         )
 
 
@@ -143,3 +146,30 @@ def installation_material():
         30,
     )
     return material
+
+
+def policy_for(material, *, port=8443, timeout=2):
+    """Generated public policy matching the disposable signing material."""
+    request = material.request
+    value = {
+        "schema_version": 2,
+        "subject": request.policy.subject,
+        "dns_sans": list(request.policy.dns_sans),
+        "ip_sans": list(request.policy.ip_sans),
+        "issuing_ca_pem": public_pem(material.ca).decode("ascii"),
+        "issuing_ca_description": "Test root",
+        "lifetime_days": request.lifetime_days,
+        "signing_digest": "sha256",
+        "issued_signature_oid": "1.2.840.113549.1.1.11",
+        "csr_signature_algorithm": "SHA384withRSA",
+        "live_tls": {
+            "address": "127.0.0.1",
+            "server_hostname": "unifi.test",
+            "port": port,
+            "timeout_seconds": timeout,
+            "attempt_timeout_seconds": min(timeout, 1),
+            "retry_delay_seconds": 0,
+            "max_attempts": 2,
+        },
+    }
+    return parse_policy(json.dumps(value).encode())

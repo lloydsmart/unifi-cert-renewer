@@ -6,6 +6,7 @@
 !src/opnsense_client.py
 !src/production_renewer.py
 !src/public_key.py
+!src/renewal_policy.py
 !src/secure_file.py
 !src/tls_policy.py
 !src/unifi_cert_renewer.py

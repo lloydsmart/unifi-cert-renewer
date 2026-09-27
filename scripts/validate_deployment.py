@@ -20,6 +20,7 @@ EXPECTED_TMPFS = "/tmp:rw,noexec,nosuid,nodev,size=16m"
 EXPECTED_RENEWER_IMAGE = "local/unifi-cert-renewer:ci"
 EXPECTED_NETWORK_NAME = "unifi-ci"
 EXPECTED_SECRETS_DIRECTORY = "/tmp/unifi-cert-renewer-ci-secrets"
+EXPECTED_POLICY_DIRECTORY = "/tmp/unifi-cert-renewer-ci-policy"
 
 
 class DeploymentValidationError(ValueError):
@@ -95,13 +96,14 @@ def validate_compose(document: dict[str, Any]) -> None:
             )
 
     volumes = renewer.get("volumes")
-    if not isinstance(volumes, list) or len(volumes) != 2:
+    if not isinstance(volumes, list) or len(volumes) != 3:
         raise DeploymentValidationError(
-            "Compose renewer must have exactly two bind mounts"
+            "Compose renewer must have exactly three bind mounts"
         )
     expected_mounts = {
         ("/run/unifi-cert-renewer", "/run/unifi-cert-renewer"),
         (EXPECTED_SECRETS_DIRECTORY, "/run/secrets"),
+        (EXPECTED_POLICY_DIRECTORY, "/run/unifi-cert-renewer-policy"),
     }
     actual_mounts: set[tuple[str, str]] = set()
     for volume in volumes:

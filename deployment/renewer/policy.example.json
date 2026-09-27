@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "subject": "CN=unifi.example.internal",
+  "dns_sans": ["unifi.example.internal"],
+  "ip_sans": [],
+  "issuing_ca_pem": "REPLACE_WITH_EXACT_PUBLIC_ISSUING_CA_PEM",
+  "issuing_ca_description": "Internal issuing CA",
+  "lifetime_days": 397,
+  "signing_digest": "sha384",
+  "issued_signature_oid": "1.2.840.113549.1.1.12",
+  "csr_signature_algorithm": "SHA384withRSA",
+  "live_tls": {
+    "address": "192.0.2.10",
+    "server_hostname": "unifi.example.internal",
+    "port": 8443,
+    "timeout_seconds": 60,
+    "attempt_timeout_seconds": 5,
+    "retry_delay_seconds": 0.5,
+    "max_attempts": 120
+  }
+}

@@ -285,7 +285,7 @@ def test_sigkill_during_live_finalisation_is_idempotently_recoverable(platform, 
         filesystem._Files.remove = remove
         filesystem._Files.sync_directory = sync
         try:
-            p.adapter.finalize_live_verification(p.plan.certificate_chain_der[0])
+            p.adapter.verify_pending()
         except BaseException:
             os._exit(71)
         os._exit(72)
@@ -300,3 +300,27 @@ def test_sigkill_during_live_finalisation_is_idempotently_recoverable(platform, 
     assert p.adapter.recover() == "no_active_transaction"
     assert not any((p.root / name).exists() for name in (ROLLBACK, JOURNAL, STAGE))
     assert p.events.count("import") == 1
+
+
+def test_process_death_during_tls_observation_requires_fresh_verification(platform):
+    p = platform
+    install(p)
+    child = os.fork()
+    if child == 0:
+        executor.verify_prepared_live_tls_certificate = lambda **kwargs: os._exit(77)
+        try:
+            p.adapter.verify_pending()
+        except BaseException:
+            os._exit(78)
+        os._exit(79)
+    waited, status = os.waitpid(child, 0)
+    assert waited == child
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 77
+    journal = json.loads((p.root / JOURNAL).read_bytes())
+    assert journal["phase"] == "service_resumed_pending_live_verification"
+    assert (p.root / ROLLBACK).exists()
+    assert p.adapter.recover() == "service_resumed_pending_live_verification"
+    assert (p.root / ROLLBACK).exists()
+    # The parent retains the fixture's separate verifier; it must observe again.
+    assert p.adapter.verify_pending() == "renewal_finalized"
+    assert not (p.root / JOURNAL).exists()

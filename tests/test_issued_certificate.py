@@ -8,8 +8,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
+import certificate as certificate_module
 from certificate import (
     MAX_ISSUED_CERTIFICATE_BYTES,
+    MAX_TRUST_BUNDLE_BYTES,
     OPNSENSE_IKE_INTERMEDIATE_EKU_OID,
     IssuedCertificateValidationError,
     validate_issued_certificate,
@@ -462,3 +464,84 @@ def test_rejects_missing_csr_san_policy(material) -> None:
 
     with pytest.raises(IssuedCertificateValidationError, match="DNS SAN"):
         _validate(material, _issued_certificate(material), csr_info=csr_info)
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"])
+def test_trust_pem_bundle_accepts_one_or_multiple_cas_and_whitespace(
+    material, newline
+) -> None:
+    pem = _ca_pem(material).replace(b"\n", newline)
+    expected = material.ca_certificate.public_bytes(serialization.Encoding.DER)
+    single = b" \t\r\n" + pem + b"\r\n\t\v\f "
+    bundle = b"\t" + pem + b" \t\r\n" + pem + b"\n\t"
+
+    for data, count in ((single, 1), (bundle, 2)):
+        certificates = certificate_module._load_trust_certificates(data)
+        assert [
+            item.public_bytes(serialization.Encoding.DER) for item in certificates
+        ] == [expected] * count
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda pem: b"garbage" + pem,
+        lambda pem: b"\v" + pem,
+        lambda pem: pem + b"garbage" + pem,
+        lambda pem: pem + b"\v" + pem,
+        lambda pem: pem + b"garbage",
+        lambda pem: pem.replace(
+            b"-----BEGIN CERTIFICATE-----", b"-----BEGIN X-----", 1
+        ),
+        lambda pem: b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----",
+        lambda pem: pem.replace(b"\n", b"\n*", 1),
+        lambda pem: pem.split(b"-----END CERTIFICATE-----", 1)[0],
+        lambda pem: b"-----BEGIN CERTIFICATE-----QUJD\n-----END CERTIFICATE-----",
+        lambda pem: b"-----BEGIN CERTIFICATE-----\nQUJD-----END CERTIFICATE-----",
+        lambda pem: b"-----BEGIN CERTIFICATE-----\rQUJD\n-----END CERTIFICATE-----",
+        lambda pem: b"-----BEGIN CERTIFICATE-----\nQUJD\r\r\n-----END CERTIFICATE-----",
+        lambda pem: b"-----BEGIN CERTIFICATE-----\nQUJD\n\n-----END CERTIFICATE-----",
+    ],
+)
+def test_trust_pem_bundle_rejects_malformed_structure(material, change) -> None:
+    with pytest.raises(IssuedCertificateValidationError, match="malformed"):
+        certificate_module._load_trust_certificates(change(_ca_pem(material)))
+
+
+def test_trust_bundle_der_and_size_bounds_are_unchanged(material) -> None:
+    expected = material.ca_certificate.public_bytes(serialization.Encoding.DER)
+    certificates = certificate_module._load_trust_certificates(expected)
+    assert [item.public_bytes(serialization.Encoding.DER) for item in certificates] == [
+        expected
+    ]
+
+    pem = _ca_pem(material)
+    maximum = pem + b" " * (MAX_TRUST_BUNDLE_BYTES - len(pem))
+    assert len(maximum) == MAX_TRUST_BUNDLE_BYTES
+    assert len(certificate_module._load_trust_certificates(maximum)) == 1
+    with pytest.raises(IssuedCertificateValidationError, match="size limit"):
+        certificate_module._load_trust_certificates(maximum + b" ")
+
+
+def test_tab_heavy_malformed_bundle_is_bounded_and_scanned_monotonically(
+    material,
+) -> None:
+    pem = _ca_pem(material)
+    positions = []
+
+    class TracedPEM(bytes):
+        def find(self, sub, start=0, end=None):
+            if sub == b"\n":
+                positions.append(start)
+            if end is None:
+                return super().find(sub, start)
+            return super().find(sub, start, end)
+
+    certificate_module._validate_trust_pem_structure(TracedPEM(pem + b"\t" + pem))
+    assert len(positions) > 2
+    assert positions == sorted(set(positions))
+
+    suffix = b"-----BEGIN CERTIFICATE-----\nAAAA"
+    attack = b"\t" * (MAX_TRUST_BUNDLE_BYTES - len(suffix)) + suffix
+    with pytest.raises(IssuedCertificateValidationError, match="malformed"):
+        certificate_module._load_trust_certificates(attack)

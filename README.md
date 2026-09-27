@@ -5,17 +5,21 @@ Network Application with an internal OPNsense certificate authority.
 Threshold-based one-shot renewal is implemented; an external unattended
 schedule is not deployed by this project.
 
-For a released production deployment, start with the
-[installation and operation runbook](docs/installation.md). It takes an operator
-from an existing LinuxServer UniFi deployment through digest verification,
-least-privilege setup, one supervised renewal, independent verification, and
-upgrades. The [production deployment guide](docs/production-deployment.md)
-remains the deeper architecture and security reference.
+For the released v0.1.0 deployment, start with the
+[historical installation and operation runbook](docs/installation.md).
+The current source adds protocol v2; use the
+[policy and verification guide](docs/policy-and-verification-v2.md) for its
+additional deployment and upgrade requirements. The v0.1.0 runbook records
+digest verification, least-privilege setup, one supervised renewal and
+independent verification. The
+[production deployment guide](docs/production-deployment.md) records the
+earlier deployment architecture and evidence.
 
 ## Status
 
-**The supervised renewal path is implemented and production-proven, and the
-safe threshold mode needed by an external scheduler is implemented.**
+**The v0.1.0 supervised path was production-proven. The current source
+implements executor-owned policy and live verification under protocol v2;
+that change has local coverage and awaits production acceptance.**
 
 The repository currently implements read-only parsing of captured Java
 `keytool` metadata, public DER X.509 certificates, and public PEM PKCS#10 CSRs.
@@ -51,14 +55,14 @@ subset, superset, or additional OID is accepted.
 
 The application entrypoint `run_to_installation()` composes inspection, CSR
 generation/validation, OPNsense signing/retrieval, and installation preparation.
-Its default signs through OPNsense but stops before UniFi mutation. An explicit
-`install=True` exercises the guarded import and post-import checks through an
-injected UniFi execution adapter. Supplying an explicit `LiveTLSEndpoint` also
-runs Stage 7 and returns `renewal_complete` only after live verification and
-executor finalisation. The production adapter uses a fixed Unix-domain socket
-to reach a key-owner-local executor inside UniFi. The socket exposes only public
-inspection, CSR generation, guarded installation, recovery, and exact-leaf
-finalisation. See the [production deployment guide](docs/production-deployment.md).
+Its default signs through OPNsense but stops before UniFi mutation. With
+`install=True`, the worker requests guarded installation and then asks the
+executor to verify its pending live TLS transaction. The executor owns the
+operator-approved public certificate policy and completion observation; the
+worker supplies neither policy authority nor live verification evidence.
+Protocol v2 exposes only public inspection, CSR generation, guarded
+installation, recovery, and evidence-free `verify_pending`. See the
+[protected policy and verification guide](docs/policy-and-verification-v2.md).
 
 Stage 6 constructs a validated leaf-plus-CA public reply for the existing
 `unifi` PrivateKeyEntry, checks fresh pre-import state, and verifies the exact
@@ -70,9 +74,8 @@ directly issuing self-signed CA. See
 interfaces and live Java findings.
 
 The executor runs exclusively inside the UniFi key-owning environment and uses
-s6 stop/start for writer exclusion. Live endpoint verification stays on the
-application side; the executor exposes only exact-pending-certificate
-finalisation. It does not provide Docker/host orchestration. An s6 recovery
+s6 stop/start for writer exclusion. The executor verifies the live endpoint
+itself before durably finalising the pending transaction. It does not provide Docker/host orchestration. An s6 recovery
 oneshot runs before LinuxServer's UniFi configuration init and is a hard
 dependency of the Java longrun. Unsafe or ambiguous recovery state therefore
 blocks Java startup. See the [executor and recovery design](docs/unifi-executor.md).
@@ -173,7 +176,9 @@ The private key must not be exported from UniFi during routine renewal.
    recorded live OpenJDK 25 evidence.
 7. Live TLS verification following installation. Fresh verified connection,
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
-   finalisation are implemented and production-proven under supervision.
+   finalisation are implemented. The v0.1.0 worker-observed path was
+   production-proven; the current executor-observed v2 path awaits production
+   acceptance.
 8. Threshold-based one-shot renewal is implemented. The `renew` mode checks the
    exact certificate expiry timestamp and is read-only when renewal is not due.
 9. Non-root one-shot container packaging and signed-tag publication are
