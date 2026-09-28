@@ -21,10 +21,14 @@ FILES = {
 }
 MANIFEST = "candidate.json"
 MANIFEST_LIMIT = 16384
+MAX_RELEASE_TAG_CHARS = 128
 SHA256 = re.compile(r"[0-9a-f]{64}")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 TAG = re.compile(
-    r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?"
+    r"v(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)"
+    r"(?:-(?:beta|rc)\.[1-9][0-9]*)?"
 )
 
 
@@ -99,6 +103,8 @@ def context() -> dict[str, str]:
         "run_id": os.environ["GITHUB_RUN_ID"],
         "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
     }
+    if len(expected["release_tag"]) > MAX_RELEASE_TAG_CHARS:
+        raise CandidateError("invalid expected workflow identity")
     patterns = {
         "repository": r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",
         "source_sha": r"[0-9a-f]{40}",

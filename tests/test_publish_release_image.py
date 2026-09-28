@@ -15,6 +15,14 @@ REPOSITORY = "ghcr.io/lloydsmart/unifi-cert-renewer"
 RELEASE_TAG = "v0.1.0-rc.1"
 RELEASE_REF = f"{REPOSITORY}:{RELEASE_TAG}"
 
+
+def boundary_tag(length: int, suffix: str) -> str:
+    tail = f".2.3{suffix}"
+    tag = "v" + "1" * (length - 1 - len(tail)) + tail
+    assert len(tag) == length
+    return tag
+
+
 FAKE_DOCKER = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
@@ -98,16 +106,49 @@ def fake_registry(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
 
 def run_helper(
-    environment: dict[str, str], registry_case: str
+    environment: dict[str, str], registry_case: str, release_tag: str = RELEASE_TAG
 ) -> subprocess.CompletedProcess[str]:
     environment["FAKE_REGISTRY_CASE"] = registry_case
+    environment["RELEASE_REF"] = f"{REPOSITORY}:{release_tag}"
     return subprocess.run(
-        [str(SCRIPT), TESTED_ID, REPOSITORY, RELEASE_TAG],
+        [str(SCRIPT), TESTED_ID, REPOSITORY, release_tag],
         check=False,
         capture_output=True,
         encoding="utf-8",
         env=environment,
     )
+
+
+@pytest.mark.parametrize("suffix", ["", "-beta.1", "-rc.1"])
+def test_128_character_release_tag_passes_publisher_validation(
+    fake_registry: tuple[dict[str, str], Path], suffix: str
+) -> None:
+    environment, log = fake_registry
+    release_tag = boundary_tag(128, suffix)
+    release_ref = f"{REPOSITORY}:{release_tag}"
+
+    result = run_helper(environment, "absent", release_tag)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == PUSHED_DIGEST
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert f"manifest inspect {release_ref}" in calls
+    assert f"tag {TESTED_ID} {release_ref}" in calls
+    assert f"push {release_ref}" in calls
+
+
+@pytest.mark.parametrize("suffix", ["", "-beta.1", "-rc.1"])
+def test_129_character_release_tag_fails_before_docker(
+    fake_registry: tuple[dict[str, str], Path], suffix: str
+) -> None:
+    environment, log = fake_registry
+    release_tag = boundary_tag(129, suffix)
+
+    result = run_helper(environment, "absent", release_tag)
+
+    assert result.returncode == 2
+    assert "128-character container tag limit" in result.stderr
+    assert not log.exists()
 
 
 def test_absent_tag_publishes_and_verifies_digest(

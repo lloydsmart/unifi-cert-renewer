@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import Any
 
 MAX_INPUT_BYTES = 1024 * 1024
+MAX_RELEASE_TAG_CHARS = 128
 RELEASE_TAG_PATTERN = re.compile(
     r"v(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)"
-    r"(?:-rc\.(?:[1-9][0-9]*))?"
+    r"(?:-(?P<prerelease>beta|rc)\.[1-9][0-9]*)?"
 )
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 
@@ -55,10 +56,13 @@ def load_json_object(path: Path, description: str) -> dict[str, Any]:
 
 
 def validate_release_version(tag_name: str) -> bool:
-    """Validate the narrow initial release syntax and return prerelease state."""
-    if not RELEASE_TAG_PATTERN.fullmatch(tag_name):
+    """Validate the narrow release syntax and return prerelease state."""
+    if len(tag_name) > MAX_RELEASE_TAG_CHARS:
+        raise ReleaseTagValidationError("release tag exceeds 128 characters")
+    match = RELEASE_TAG_PATTERN.fullmatch(tag_name)
+    if match is None:
         raise ReleaseTagValidationError("release tag has unsupported syntax")
-    return "-rc." in tag_name
+    return match.group("prerelease") is not None
 
 
 def _required_object(container: dict[str, Any], key: str) -> dict[str, Any]:
