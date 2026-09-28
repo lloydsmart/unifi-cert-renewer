@@ -10,7 +10,6 @@ fi
 tested_image_id=$1
 repository=$2
 release_tag=$3
-release_ref="$repository:$release_tag"
 
 if [[ ! $tested_image_id =~ ^sha256:[0-9a-f]{64}$ ]]; then
     printf '%s\n' 'Tested image ID must be sha256 followed by 64 lowercase hex characters.' >&2
@@ -24,6 +23,11 @@ if [[ $release_tag == -* || $release_tag == *:* || $release_tag == *@* ]]; then
     printf '%s\n' 'Release tag is not safe for a container reference.' >&2
     exit 2
 fi
+if [[ ${#release_tag} -gt 128 ]]; then
+    printf '%s\n' 'Release tag exceeds the 128-character container tag limit.' >&2
+    exit 2
+fi
+release_ref="$repository:$release_tag"
 if ! command -v docker >/dev/null 2>&1; then
     printf '%s\n' 'Docker is required but is not available on PATH.' >&2
     exit 1

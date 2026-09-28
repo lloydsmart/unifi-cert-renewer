@@ -53,7 +53,7 @@ The release tag policy accepts only:
 - `vMAJOR.MINOR.PATCH-rc.N`, where `N` is a positive integer
 - `vMAJOR.MINOR.PATCH`
 
-Release tag names have a maximum length of 256 characters. Numeric
+Release tag names have a maximum length of 128 characters. Numeric
 components do not use leading zeroes, except for the number zero itself.
 Prerelease sequence numbers cannot have leading zeroes. Other prerelease
 labels, combinations, and build-metadata forms are rejected even though the

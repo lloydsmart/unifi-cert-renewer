@@ -48,7 +48,7 @@ def test_validate_release_version_accepts_supported_syntax(
     assert validator.validate_release_version(tag) is prerelease
 
 
-@pytest.mark.parametrize(("length", "accepted"), [(256, True), (257, False)])
+@pytest.mark.parametrize(("length", "accepted"), [(128, True), (129, False)])
 @pytest.mark.parametrize(
     ("suffix", "prerelease"),
     [("", False), ("-beta.1", True), ("-rc.1", True)],
@@ -63,7 +63,7 @@ def test_release_tag_length_boundary(
         assert validator.validate_release_version(tag) is prerelease
     else:
         with pytest.raises(
-            validator.ReleaseTagValidationError, match="exceeds 256 characters"
+            validator.ReleaseTagValidationError, match="exceeds 128 characters"
         ):
             validator.validate_release_version(tag)
 

@@ -27,7 +27,7 @@ def boundary_tag(length: int, suffix: str) -> str:
 
 
 BOUNDARY_TAGS = tuple(
-    (boundary_tag(256, suffix), boundary_tag(257, suffix))
+    (boundary_tag(128, suffix), boundary_tag(129, suffix))
     for suffix in ("", "-beta.1", "-rc.1")
 )
 VALID_RELEASE_TAGS = (
@@ -149,8 +149,8 @@ def test_release_tag_candidate_lifecycle_in_isolated_mode(
 def test_release_tag_length_boundary_in_candidate(
     handoff: Path, monkeypatch: pytest.MonkeyPatch, accepted: str, rejected: str
 ) -> None:
-    assert len(accepted) == 256
-    assert len(rejected) == 257
+    assert len(accepted) == 128
+    assert len(rejected) == 129
     manifest = handoff / candidate.MANIFEST
     manifest.unlink()
     monkeypatch.setenv("RELEASE_TAG", accepted)

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_INPUT_BYTES = 1024 * 1024
-MAX_RELEASE_TAG_CHARS = 256
+MAX_RELEASE_TAG_CHARS = 128
 RELEASE_TAG_PATTERN = re.compile(
     r"v(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)\."
@@ -58,7 +58,7 @@ def load_json_object(path: Path, description: str) -> dict[str, Any]:
 def validate_release_version(tag_name: str) -> bool:
     """Validate the narrow release syntax and return prerelease state."""
     if len(tag_name) > MAX_RELEASE_TAG_CHARS:
-        raise ReleaseTagValidationError("release tag exceeds 256 characters")
+        raise ReleaseTagValidationError("release tag exceeds 128 characters")
     match = RELEASE_TAG_PATTERN.fullmatch(tag_name)
     if match is None:
         raise ReleaseTagValidationError("release tag has unsupported syntax")

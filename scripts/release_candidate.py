@@ -21,7 +21,7 @@ FILES = {
 }
 MANIFEST = "candidate.json"
 MANIFEST_LIMIT = 16384
-MAX_RELEASE_TAG_CHARS = 256
+MAX_RELEASE_TAG_CHARS = 128
 SHA256 = re.compile(r"[0-9a-f]{64}")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 TAG = re.compile(
