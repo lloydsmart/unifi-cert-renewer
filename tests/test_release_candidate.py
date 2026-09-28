@@ -15,7 +15,58 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 candidate = importlib.import_module("release_candidate")
+validator = importlib.import_module("validate_release_tag")
 WORKFLOW = ROOT / ".github/workflows/release.yml"
+
+
+def boundary_tag(length: int, suffix: str) -> str:
+    tail = f".2.3{suffix}"
+    tag = "v" + "1" * (length - 1 - len(tail)) + tail
+    assert len(tag) == length
+    return tag
+
+
+BOUNDARY_TAGS = tuple(
+    (boundary_tag(256, suffix), boundary_tag(257, suffix))
+    for suffix in ("", "-beta.1", "-rc.1")
+)
+VALID_RELEASE_TAGS = (
+    "v0.0.0",
+    "v1.2.3",
+    "v1.2.3-beta.1",
+    "v12.34.56-beta.789",
+    "v1.2.3-rc.1",
+    "v12.34.56-rc.789",
+    *(accepted for accepted, _ in BOUNDARY_TAGS),
+)
+INVALID_RELEASE_TAGS = (
+    "v1.2.3-beta",
+    "v1.2.3-beta.0",
+    "v1.2.3-beta.01",
+    "v1.2.3-rc",
+    "v1.2.3-rc.0",
+    "v1.2.3-rc.01",
+    "v1.2.3-alpha.1",
+    "v1.2.3-preview.1",
+    "v1.2.3-beta.1+build",
+    "v1.2.3+build",
+    "v1.2.3-beta.1-rc.1",
+    "v1.2.3-rc.1-beta.1",
+    "v1.2.3-beta.1-beta.2",
+    "v1.2.3-rc.1-rc.2",
+    "v1.2.3-beta.1\n",
+    "v1.2.3-beta.1 ",
+    " v1.2.3-beta.1",
+    "v1.2.3-beta.١",
+    "v１.2.3-beta.1",
+    "v1.2.3-βeta.1",
+    "v01.2.3",
+    "v1.02.3",
+    "v1.2.03",
+    "xv1.2.3",
+    "v1.2.3extra",
+    *(rejected for _, rejected in BOUNDARY_TAGS),
+)
 
 
 def workflow_step(name: str) -> str:
@@ -62,6 +113,101 @@ def test_valid_candidate(handoff: Path) -> None:
         "renewer": os.environ["RENEWER_ID"],
         "unifi": os.environ["UNIFI_ID"],
     }
+
+
+@pytest.mark.parametrize("tag", VALID_RELEASE_TAGS)
+def test_release_tag_candidate_lifecycle_in_isolated_mode(
+    handoff: Path, monkeypatch: pytest.MonkeyPatch, tag: str
+) -> None:
+    manifest = handoff / candidate.MANIFEST
+    manifest.unlink()
+    monkeypatch.setenv("RELEASE_TAG", tag)
+    command = [sys.executable, "-I", str(ROOT / "scripts/release_candidate.py")]
+
+    created = subprocess.run(
+        [*command, "create", str(handoff)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert created.returncode == 0, created.stderr
+    digest = re.fullmatch(r"manifest_sha256=([0-9a-f]{64})\n", created.stdout)
+    assert digest is not None
+    monkeypatch.setenv("MANIFEST_SHA256", digest.group(1))
+    assert json.loads(manifest.read_text(encoding="utf-8"))["release_tag"] == tag
+
+    verified = subprocess.run(
+        [*command, "verify", str(handoff)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert verified.returncode == 0, verified.stderr
+
+
+@pytest.mark.parametrize(("accepted", "rejected"), BOUNDARY_TAGS)
+def test_release_tag_length_boundary_in_candidate(
+    handoff: Path, monkeypatch: pytest.MonkeyPatch, accepted: str, rejected: str
+) -> None:
+    assert len(accepted) == 256
+    assert len(rejected) == 257
+    manifest = handoff / candidate.MANIFEST
+    manifest.unlink()
+    monkeypatch.setenv("RELEASE_TAG", accepted)
+    monkeypatch.setenv("MANIFEST_SHA256", candidate.create(handoff))
+    assert json.loads(manifest.read_text(encoding="utf-8"))["release_tag"] == accepted
+    assert candidate.verify(handoff)["renewer"] == os.environ["RENEWER_ID"]
+
+    monkeypatch.setenv("RELEASE_TAG", rejected)
+    with pytest.raises(
+        candidate.CandidateError, match="invalid expected workflow identity"
+    ):
+        candidate.verify(handoff)
+
+
+@pytest.mark.parametrize("tag", INVALID_RELEASE_TAGS)
+def test_malformed_release_tag_rejected_by_candidate_create_and_verify(
+    handoff: Path, monkeypatch: pytest.MonkeyPatch, tag: str
+) -> None:
+    monkeypatch.setenv("RELEASE_TAG", tag)
+    with pytest.raises(
+        candidate.CandidateError, match="invalid expected workflow identity"
+    ):
+        candidate.verify(handoff)
+
+    manifest = handoff / candidate.MANIFEST
+    manifest.unlink()
+    with pytest.raises(
+        candidate.CandidateError, match="invalid expected workflow identity"
+    ):
+        candidate.create(handoff)
+    assert not manifest.exists()
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [(tag, True) for tag in VALID_RELEASE_TAGS]
+    + [(tag, False) for tag in INVALID_RELEASE_TAGS],
+)
+def test_release_and_candidate_tag_validators_agree(
+    handoff: Path, monkeypatch: pytest.MonkeyPatch, tag: str, expected: bool
+) -> None:
+    monkeypatch.setenv("RELEASE_TAG", tag)
+    try:
+        validator.validate_release_version(tag)
+    except validator.ReleaseTagValidationError:
+        release_accepts = False
+    else:
+        release_accepts = True
+
+    try:
+        candidate.context()
+    except candidate.CandidateError:
+        candidate_accepts = False
+    else:
+        candidate_accepts = True
+
+    assert release_accepts == candidate_accepts == expected
 
 
 @pytest.mark.parametrize(

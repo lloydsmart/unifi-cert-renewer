@@ -11,6 +11,24 @@ images. Operators consuming a release should follow the
 [installation and operation runbook](installation.md); this document describes
 publisher provenance, digest, and attestation controls.
 
+## Release model
+
+### Beta
+
+A beta is an unfinished prerelease for integration and supervised validation.
+Known planned work may remain before the release is feature-complete. A beta is
+not a release candidate.
+
+### Release candidate
+
+A release candidate is feature-complete for the intended stable release. If
+qualification finds no defects or operational blockers, it can become the
+stable release without adding planned feature or security work.
+
+### Stable
+
+A stable release is the qualified production release.
+
 ## Prerequisites
 
 - The release commit is merged to and reachable from `main`.
@@ -29,13 +47,16 @@ gpg --list-secret-keys --with-subkey-fingerprint \
   02EBB31CC0032A86C2C0401A1534542E61DC82D3
 ```
 
-The initial release policy accepts only:
+The release tag policy accepts only:
 
-- `vMAJOR.MINOR.PATCH`
+- `vMAJOR.MINOR.PATCH-beta.N`, where `N` is a positive integer
 - `vMAJOR.MINOR.PATCH-rc.N`, where `N` is a positive integer
+- `vMAJOR.MINOR.PATCH`
 
-Numeric components do not use leading zeroes, except for the number zero
-itself. Other prerelease or build-metadata forms are rejected even though the
+Release tag names have a maximum length of 256 characters. Numeric
+components do not use leading zeroes, except for the number zero itself.
+Prerelease sequence numbers cannot have leading zeroes. Other prerelease
+labels, combinations, and build-metadata forms are rejected even though the
 trigger pattern is broader.
 
 ## Create the signed tag
@@ -231,18 +252,23 @@ Do not declare a release candidate accepted until both pulls succeed.
 
 ## Stable-release sequence
 
-1. Require the selected release candidate's workflow, both image publications,
+1. Beta releases may be published during implementation and integration for
+   supervised validation while planned work remains.
+2. Cut the first release candidate only when the intended stable release is
+   considered feature-complete.
+3. Require the selected release candidate's workflow, both image publications,
    all attestations, and GitHub prerelease to have succeeded.
-2. Confirm both packages are public and their exact digests pull without
+4. Confirm both packages are public and their exact digests pull without
    authentication.
-3. Deploy the exact release-candidate digests to production and complete the
-   supervised smoke and renewal verification.
-4. After approval, create and locally verify a signed annotated stable tag on
-   the approved `main` commit, then push it.
-5. Verify the stable workflow result and deploy only its recorded immutable
+5. Qualify the release candidate in production: deploy its exact digests and
+   complete the supervised smoke and renewal verification.
+6. After qualification and approval, create and locally verify a signed
+   annotated stable tag on the approved `main` commit, then push it.
+7. Verify the stable workflow result and deploy only its recorded immutable
    digests.
 
-An `-rc.N` tag creates a GitHub prerelease. A stable version tag creates a
+A beta is not promoted directly to stable under this process. Both `-beta.N`
+and `-rc.N` tags create GitHub prereleases. A stable version tag creates a
 normal GitHub Release. The release is created only after both images have
 passed package checks and vulnerability comparison, SBOM generation,
 publication identity verification, and provenance and SBOM attestation.
