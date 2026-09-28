@@ -43,10 +43,25 @@ The example is deliberately invalid until its CA is replaced. The policy binds:
 - schema version 2; subject and complete DNS/IP SANs;
 - the exact directly issuing self-signed CA certificate and its worker-facing
   OPNsense description;
-- lifetime in days, issued-leaf signing digest and exact RSA signature OID;
+- lifetime in days, issued-leaf signing digest and exact signature OID;
 - fixed CSR signature policy `SHA384withRSA`;
 - numeric TLS connection address, port, separate DNS/IP TLS identity and bounded
   readiness settings (overall timeout at most 120 seconds).
+
+The example digest and OID illustrate an **EC issuing CA with SHA-256
+issuance**: `1.2.840.10045.4.3.2` is the expected issued-leaf OID. Set both fields for the actual pinned
+issuing CA public key and OPNsense signing digest. The executor accepts only
+these combinations:
+
+| Issuing CA public key | `sha256` | `sha384` | `sha512` |
+| --- | --- | --- | --- |
+| RSA | `1.2.840.113549.1.1.11` | `1.2.840.113549.1.1.12` | `1.2.840.113549.1.1.13` |
+| EC | `1.2.840.10045.4.3.2` | `1.2.840.10045.4.3.3` | `1.2.840.10045.4.3.4` |
+
+The issuing CA certificate's own signature digest does not determine the leaf
+signature OID. The UniFi key and CSR remain RSA with the fixed
+`SHA384withRSA` CSR policy, even when the issuing CA has an EC key. Unsupported
+issuing CA key algorithms and mismatched OIDs are rejected.
 
 The executor derives the current SPKI from its own public keystore inspection.
 The worker's SPKI value is only a stale-state assertion. It is not a persistent
