@@ -116,8 +116,12 @@ def validate_compose(document: dict[str, Any]) -> None:
             source == "/run/unifi-cert-renewer-lifecycle"
             and target == "/run/unifi-cert-renewer-lifecycle"
         )
-        if volume.get("type") != "bind" or volume.get("read_only") is not (
-            not writable_lock
+        expected_read_only = not writable_lock
+        actual_read_only = volume.get("read_only", False)
+        if (
+            volume.get("type") != "bind"
+            or type(actual_read_only) is not bool
+            or actual_read_only != expected_read_only
         ):
             raise DeploymentValidationError(
                 "Compose mounts must have the required access modes"

@@ -186,6 +186,9 @@ jobs:
             --tag "$UNIFI_IMAGE" \
             .
 
+      - name: Verify two-container lifecycle lock contention
+        run: ./scripts/validate-lifecycle-lock-containers.sh "$RENEWER_IMAGE"
+
       - name: Assert container packaging boundaries
         run: >-
           ./scripts/validate-container-packaging.sh
