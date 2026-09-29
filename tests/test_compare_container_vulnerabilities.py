@@ -367,6 +367,54 @@ def load_policy(tmp_path, entries, *, today=TODAY):
     return comparator.load_exceptions(path, today=today)
 
 
+def test_current_unifi_exception_registry_matches_approved_review():
+    registry = (
+        Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
+    )
+    entries = comparator.load_exceptions(registry, today=date(2026, 9, 30))
+    identifiers = {entry.identifier for entry in entries}
+
+    assert len(entries) == len(identifiers) == 26
+    assert identifiers == {
+        *(f"EX-UNIFI-20260926-{number:03d}" for number in range(1, 26)),
+        "EX-UNIFI-20260930-026",
+    }
+    assert sum(entry.finding.severity == "HIGH" for entry in entries) == 19
+    assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 7
+    for entry in entries:
+        assert entry.upstream_image == (
+            "lscr.io/linuxserver/unifi-network-application@sha256:"
+            "5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a"
+        )
+        assert entry.platform == "linux/amd64"
+        assert entry.owner == entry.reviewed_by == "Lloyd Smart"
+        assert entry.reviewed_on == date(2026, 9, 30)
+        assert entry.expires_on == date(2026, 10, 5)
+        assert entry.tracking_url == (
+            "https://github.com/lloydsmart/unifi-cert-renewer/issues/63"
+        )
+
+    new = next(
+        entry for entry in entries if entry.identifier == "EX-UNIFI-20260930-026"
+    )
+    assert asdict(new.finding) == {
+        "identity": {
+            "result_class": "lang-pkgs",
+            "result_type": "jar",
+            "target": "Java",
+            "vulnerability_id": "CVE-2026-68497",
+            "package_name": "com.fasterxml.jackson.core:jackson-databind",
+            "package_id": "",
+            "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+            "installed_version": "2.21.2",
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.18.10, 2.21.6, 2.22.2",
+    }
+    with pytest.raises(comparator.InvalidReportError, match="expired"):
+        comparator.load_exceptions(registry, today=date(2026, 10, 5))
+
+
 def matching_comparison():
     fixture = report(result(vulnerability("CVE-EXAMPLE")))
     return compare(fixture, fixture)
