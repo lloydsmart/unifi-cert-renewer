@@ -415,11 +415,16 @@ class ProductionUnifiExecutor:
             raise UnifiOperationError("canonical changed while restoring service")
 
     @contextmanager
-    def exclusive(self):
+    def exclusive(self, expected_before: PublicKeystoreState):
         with self._locked():
             self._no_transaction()
-            before = self._collect(CANONICAL)
             identity = self._files.status(CANONICAL)
+            before = self._collect(CANONICAL)
+            self._files.same(CANONICAL, identity)
+            if not isinstance(expected_before, PublicKeystoreState) or not _same_public(
+                before, expected_before
+            ):
+                raise UnifiOperationError("stale public import request")
             if identity.st_nlink != 1:
                 raise UnifiOperationError("unexpected canonical hard link")
             self._journal = {

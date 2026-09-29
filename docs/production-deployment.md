@@ -72,6 +72,40 @@ The numeric group is deployment metadata, not a secret. Production currently
 uses `984`; configure it consistently on the host and both containers. Do not
 add unrelated processes to this group.
 
+Provision one persistent lock inode per UniFi deployment on the host, before
+starting any renewer container:
+
+```bash
+install -d -o root -g 1000 -m 0750 /run/unifi-cert-renewer-lifecycle
+install -o root -g 1000 -m 0660 /dev/null \
+  /run/unifi-cert-renewer-lifecycle/renewal.lock
+```
+
+Run these provisioning commands only while no renewer worker is active. On
+hosts where `/run` is ephemeral, recreate the directory and file at boot
+before starting the renewer. Bind the directory read-write only into that
+deployment's renewer containers at the same path. The worker opens the existing
+regular file with no-follow semantics; it never creates, removes, replaces,
+chmods, or chowns the lock file. It requires directory `root:1000` mode
+`0750` and file `root:1000` mode `0660` with one link and empty contents.
+The worker checks the file's device/inode again after acquiring nonblocking
+flock. A missing, replaced, or unsafe directory or file fails closed.
+
+All renewer invocations for one deployment must share this directory and file.
+Do not unlink, rename, replace, or reprovision the file while workers may run.
+`prepare`, `install`, and `renew` take the lock before configuration loading or
+inspection. A busy invocation emits `state=busy` and exits 75 without
+inspection, signing, or executor mutation. The kernel releases the lock when a
+worker exits, including after a crash; the host-provisioned inode remains.
+
+The application flock covers the entire inspect/due decision, CSR, signing,
+install, live verification and finalisation sequence. The executor's separate
+inner transaction lock still protects key-owner-local operations and recovery.
+Keep the external scheduler's host-side flock around the complete container
+invocation as an operational overlap guard. All scheduler invocations for one
+deployment must share a host lock. All renewer containers for that deployment
+must share the separate lifecycle directory.
+
 ## Unprivileged renewer image
 
 Build the renewer from the repository root:
@@ -111,7 +145,8 @@ The service is read-only, drops every capability, enables
 
 - `/run/unifi-cert-renewer` at the same path, read-only, for the Unix socket;
 - supplemental gid `984`; and
-- its own read-only `/run/secrets` configuration and OPNsense credentials.
+- its own read-only `/run/secrets` configuration and OPNsense credentials; and
+- the dedicated writable lifecycle lock directory.
 
 It does not receive UniFi `/config`, the UniFi keystore-password secret, or the
 Docker socket. These omissions are part of the trust boundary, not deployment
@@ -160,8 +195,12 @@ docker image inspect --format '{{.Config.User}}' "$RENEWER_IMAGE"
 ```
 
 The expected image user is `1000:1000`. The resolved definition must show gid
-`984`, the external shared network, and only the runtime and renewer-secrets
-mounts. It must not show `/config`, `unifi-keystore-password`, or
+`984`, the external shared network, and exactly four bind mounts:
+`/run/unifi-cert-renewer` (read-only executor socket/runtime), `/run/secrets`
+(read-only worker configuration and credentials),
+`/run/unifi-cert-renewer-policy` (read-only protected public renewal policy),
+and `/run/unifi-cert-renewer-lifecycle` (read-write host-provisioned persistent
+`renewal.lock`). It must not show `/config`, `unifi-keystore-password`, or
 `/var/run/docker.sock`.
 
 ## s6 startup ordering
@@ -242,12 +281,13 @@ verification and executor finalisation.
 the same validated public inspection as `inspect`, then renews only when the
 certificate's exact `not_valid_after` timestamp is at or before the current UTC
 time plus `renew_before_days`. A not-due result exits successfully with
-`state=renewal_not_due` and is genuinely read-only: it does not read the issuing
-CA, request a CSR, construct the OPNsense client, sign, install, restart UniFi,
-or create transaction state. A due result uses the same complete guarded path
-as `install`. Every external scheduler must use one shared host-side `flock` or
-equivalent overlap guard around the complete `renew` invocation so concurrent
-runs cannot both enter the due path.
+`state=renewal_not_due` and does not read the issuing CA, request a CSR,
+construct the OPNsense client, sign, install, restart UniFi, or create executor
+transaction state. It opens the host-provisioned lifecycle lock without
+changing its inode or contents. A due result uses the same complete guarded path
+as `install`. The application lifecycle flock rejects a concurrent run before
+the due inspection. Keep one shared host-side scheduler `flock` or equivalent
+around the complete `renew` invocation as an additional operational guard.
 
 There is no repository-provided cron entry, scheduler loop, daemon, automatic
 state-changing retry, or container restart loop. After any ambiguous signing,

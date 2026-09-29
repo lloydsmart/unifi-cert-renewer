@@ -96,25 +96,32 @@ def validate_compose(document: dict[str, Any]) -> None:
             )
 
     volumes = renewer.get("volumes")
-    if not isinstance(volumes, list) or len(volumes) != 3:
+    if not isinstance(volumes, list) or len(volumes) != 4:
         raise DeploymentValidationError(
-            "Compose renewer must have exactly three bind mounts"
+            "Compose renewer must have exactly four bind mounts"
         )
     expected_mounts = {
         ("/run/unifi-cert-renewer", "/run/unifi-cert-renewer"),
         (EXPECTED_SECRETS_DIRECTORY, "/run/secrets"),
         (EXPECTED_POLICY_DIRECTORY, "/run/unifi-cert-renewer-policy"),
+        ("/run/unifi-cert-renewer-lifecycle", "/run/unifi-cert-renewer-lifecycle"),
     }
     actual_mounts: set[tuple[str, str]] = set()
     for volume in volumes:
         if not isinstance(volume, dict):
             raise DeploymentValidationError("Compose volume must be an object")
-        if volume.get("type") != "bind" or volume.get("read_only") is not True:
-            raise DeploymentValidationError(
-                "Compose mounts must be read-only bind mounts"
-            )
         source = volume.get("source")
         target = volume.get("target")
+        writable_lock = (
+            source == "/run/unifi-cert-renewer-lifecycle"
+            and target == "/run/unifi-cert-renewer-lifecycle"
+        )
+        if volume.get("type") != "bind" or volume.get("read_only") is not (
+            not writable_lock
+        ):
+            raise DeploymentValidationError(
+                "Compose mounts must have the required access modes"
+            )
         if not isinstance(source, str) or not isinstance(target, str):
             raise DeploymentValidationError(
                 "Compose mount source and target must be text"

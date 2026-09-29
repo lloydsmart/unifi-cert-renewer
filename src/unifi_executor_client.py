@@ -214,7 +214,7 @@ class SocketUnifiExecutionBoundary:
             connection.close()
 
     @contextmanager
-    def exclusive(self):
+    def exclusive(self, expected_before):
         if self._exclusive:
             raise UnifiOperationError("executor client already active")
         self._exclusive = True

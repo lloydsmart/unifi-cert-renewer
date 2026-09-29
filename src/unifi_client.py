@@ -136,7 +136,9 @@ class UnifiExecutionBoundary(Protocol):
     writers. Host root remains a trusted administrative boundary.
     """
 
-    def exclusive(self) -> AbstractContextManager[None]: ...
+    def exclusive(
+        self, expected_before: PublicKeystoreState
+    ) -> AbstractContextManager[None]: ...
 
     def inspect_public_state(self) -> PublicKeystoreState: ...
 
@@ -326,7 +328,7 @@ class UnifiClient:
 
         stage = "pre-import validation"
         try:
-            with self._boundary.exclusive():
+            with self._boundary.exclusive(request.before):
                 prepare_certificate_import(request)
                 current = self._boundary.inspect_public_state()
                 old_info = inspect_public_keystore_state(request.before)

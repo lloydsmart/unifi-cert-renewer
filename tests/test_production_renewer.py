@@ -1,4 +1,8 @@
 import json
+import os
+import subprocess
+import sys
+import threading
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -157,6 +161,272 @@ def test_entrypoint_accepts_exactly_one_known_mode(arguments, capsys):
     assert capsys.readouterr().err == (
         "Usage: production_renewer.py {inspect|csr|prepare|install|renew}\n"
     )
+
+
+@pytest.fixture(autouse=True)
+def lifecycle_directory(tmp_path, monkeypatch):
+    directory = tmp_path / "lifecycle"
+    directory.mkdir(mode=0o750)
+    directory.chmod(0o750)
+    lock = directory / "renewal.lock"
+    lock.touch(mode=0o660)
+    lock.chmod(0o660)
+    monkeypatch.setattr(production_renewer, "LIFECYCLE_DIRECTORY", str(directory))
+    monkeypatch.setattr(production_renewer, "LIFECYCLE_OWNER_UID", os.geteuid())
+    monkeypatch.setattr(production_renewer, "LIFECYCLE_GROUP_GID", os.getegid())
+    return directory
+
+
+@pytest.mark.parametrize("mode", ["prepare", "install", "renew"])
+def test_busy_lifecycle_rejects_before_configuration_or_signing(
+    lifecycle_directory, monkeypatch, mode
+):
+    lock = lifecycle_directory / "renewal.lock"
+    original = lock.stat()
+    monkeypatch.setattr(
+        production_renewer,
+        "load_production_config",
+        lambda: pytest.fail("busy worker must not inspect or sign"),
+    )
+    with production_renewer._lifecycle_lock():
+        assert production_renewer.run_one_shot(mode) == {
+            "mode": mode,
+            "state": "busy",
+            "renewal_complete": False,
+        }
+    assert lock.stat().st_ino == original.st_ino
+    assert lock.stat().st_size == 0
+
+
+def test_busy_entrypoint_reports_temporary_failure(
+    lifecycle_directory, monkeypatch, capsys
+):
+    with production_renewer._lifecycle_lock():
+        assert production_renewer.main(["renew"]) == 75
+    assert json.loads(capsys.readouterr().out) == {
+        "mode": "renew",
+        "state": "busy",
+        "renewal_complete": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("renew", "renew"), ("prepare", "install"), ("install", "prepare")],
+)
+def test_overlapping_lifecycles_and_success_release(
+    installation_material, monkeypatch, first, second
+):
+    config = replace(parsed_config(installation_material), renew_before_days=45)
+    now = installation_material.now
+    due_state = public_state_expiring_at(
+        installation_material, now + timedelta(days=30)
+    )
+    plan = prepare_certificate_import(
+        installation_material.request, now=installation_material.now
+    )
+    entered = threading.Event()
+    release = threading.Event()
+    events = []
+    outcomes = []
+
+    class DueClient:
+        def inspect_current(self, policy):
+            events.append("inspect")
+            assert policy == config.policy
+            return due_state
+
+    unifi = DueClient()
+
+    def load_config():
+        events.append("config")
+        return config
+
+    def build_client(authority):
+        events.append("client")
+        return unifi
+
+    def opnsense_client(*args, **kwargs):
+        events.append("opnsense")
+        return object()
+
+    def sign_once(**kwargs):
+        events.append("sign")
+        entered.set()
+        assert release.wait(timeout=5)
+        installed = SimpleNamespace() if kwargs["install"] else None
+        state = "renewal_complete" if installed is not None else "prepared"
+        return InstallationStageResult(
+            state, installation_material.request, plan, installed
+        )
+
+    def first_run():
+        try:
+            outcomes.append(production_renewer.run_one_shot(first, now=now))
+        except BaseException as error:
+            outcomes.append(error)
+
+    monkeypatch.setattr(production_renewer, "load_production_config", load_config)
+    monkeypatch.setattr(
+        production_renewer, "build_production_unifi_client", build_client
+    )
+    monkeypatch.setattr(production_renewer, "OPNsenseClient", opnsense_client)
+    monkeypatch.setattr(production_renewer, "run_to_installation", sign_once)
+    worker = threading.Thread(target=first_run)
+    worker.start()
+    try:
+        assert entered.wait(timeout=5)
+        before_busy = events.copy()
+        assert production_renewer.run_one_shot(second, now=now) == {
+            "mode": second,
+            "state": "busy",
+            "renewal_complete": False,
+        }
+        assert events == before_busy
+    finally:
+        release.set()
+        worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert len(outcomes) == 1 and isinstance(outcomes[0], dict)
+    assert outcomes[0]["state"] in {"prepared", "renewal_complete"}
+    assert production_renewer.run_one_shot(second, now=now)["state"] in {
+        "prepared",
+        "renewal_complete",
+    }
+    assert events.count("sign") == 2
+
+
+def test_crashed_worker_releases_lifecycle_lock(lifecycle_directory):
+    code = """
+import os
+import sys
+sys.path.insert(0, sys.argv[1])
+import production_renewer
+production_renewer.LIFECYCLE_DIRECTORY = sys.argv[2]
+production_renewer.LIFECYCLE_OWNER_UID = os.geteuid()
+production_renewer.LIFECYCLE_GROUP_GID = os.getegid()
+with production_renewer._lifecycle_lock():
+    print("locked", flush=True)
+    sys.stdin.read(1)
+"""
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(REPOSITORY_ROOT / "src"),
+            str(lifecycle_directory),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout.readline().strip() == "locked"
+        with (
+            pytest.raises(production_renewer._LifecycleBusy),
+            production_renewer._lifecycle_lock(),
+        ):
+            pytest.fail("concurrent worker acquired the lock")
+        child.kill()
+        child.wait(timeout=5)
+        with production_renewer._lifecycle_lock():
+            pass
+        assert (lifecycle_directory / "renewal.lock").exists()
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        child.stdin.close()
+        child.stdout.close()
+
+
+def test_pre_signing_failure_releases_lifecycle_lock(monkeypatch):
+    def fail_config():
+        raise ValueError("synthetic failure")
+
+    monkeypatch.setattr(production_renewer, "load_production_config", fail_config)
+    with pytest.raises(production_renewer.ProductionRunError):
+        production_renewer.run_one_shot("renew")
+    with production_renewer._lifecycle_lock():
+        pass
+
+
+def test_missing_lifecycle_lock_fails_without_creating_it(
+    lifecycle_directory, monkeypatch
+):
+    lock = lifecycle_directory / "renewal.lock"
+    lock.unlink()
+    monkeypatch.setattr(
+        production_renewer,
+        "load_production_config",
+        lambda: pytest.fail("missing lock must stop before inspection"),
+    )
+    with pytest.raises(production_renewer.ProductionRunError, match="lock unavailable"):
+        production_renewer.run_one_shot("renew")
+    assert not lock.exists()
+
+
+def test_unsafe_lifecycle_lock_rejected(lifecycle_directory):
+    lock = lifecycle_directory / "renewal.lock"
+    lock.unlink()
+    lock.symlink_to(lifecycle_directory / "target")
+    with (
+        pytest.raises(production_renewer.ProductionRunError, match="lock unavailable"),
+        production_renewer._lifecycle_lock(),
+    ):
+        pytest.fail("symlink must not be followed")
+
+
+@pytest.mark.parametrize(
+    "damage", ["directory_mode", "file_mode", "hardlink", "owner", "group"]
+)
+def test_invalid_host_lock_metadata_fails_closed(
+    lifecycle_directory, monkeypatch, damage
+):
+    lock = lifecycle_directory / "renewal.lock"
+    if damage == "directory_mode":
+        lifecycle_directory.chmod(0o770)
+    elif damage == "file_mode":
+        lock.chmod(0o664)
+    elif damage == "hardlink":
+        os.link(lock, lifecycle_directory / "second-link")
+    elif damage == "owner":
+        monkeypatch.setattr(production_renewer, "LIFECYCLE_OWNER_UID", os.geteuid() + 1)
+    else:
+        monkeypatch.setattr(production_renewer, "LIFECYCLE_GROUP_GID", os.getegid() + 1)
+    monkeypatch.setattr(
+        production_renewer,
+        "load_production_config",
+        lambda: pytest.fail("unsafe lock must stop before inspection"),
+    )
+    with pytest.raises(production_renewer.ProductionRunError, match="lock unavailable"):
+        production_renewer.run_one_shot("renew")
+
+
+def test_lock_path_replacement_after_flock_fails_before_renewal(
+    lifecycle_directory, monkeypatch
+):
+    lock = lifecycle_directory / "renewal.lock"
+    old_inode = lock.stat().st_ino
+    original_flock = production_renewer.fcntl.flock
+
+    def replace_after_flock(fd, operation):
+        original_flock(fd, operation)
+        replacement = lifecycle_directory / "replacement"
+        replacement.touch(mode=0o660)
+        replacement.chmod(0o660)
+        os.replace(replacement, lock)
+
+    monkeypatch.setattr(production_renewer.fcntl, "flock", replace_after_flock)
+    monkeypatch.setattr(
+        production_renewer,
+        "load_production_config",
+        lambda: pytest.fail("replaced lock must stop before inspection"),
+    )
+    with pytest.raises(production_renewer.ProductionRunError, match="lock unavailable"):
+        production_renewer.run_one_shot("renew")
+    assert lock.stat().st_ino != old_inode
 
 
 def test_entrypoint_accepts_renew(monkeypatch, capsys):

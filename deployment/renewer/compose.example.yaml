@@ -19,6 +19,10 @@ services:
         target: /run/unifi-cert-renewer
         read_only: true
       - type: bind
+        source: /run/unifi-cert-renewer-lifecycle
+        target: /run/unifi-cert-renewer-lifecycle
+        read_only: false
+      - type: bind
         source: ${RENEWER_SECRETS_DIRECTORY:?set RENEWER_SECRETS_DIRECTORY}
         target: /run/secrets
         read_only: true

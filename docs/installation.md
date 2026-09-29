@@ -372,7 +372,12 @@ Inspect the complete resolved output before running a mode. It must show:
 
 - exact `$RENEWER_IMAGE`, never a mutable tag;
 - user `1000:1000` and supplemental gid `984`;
-- only the runtime and renewer-secrets read-only bind mounts;
+- exactly three read-only bind mounts: `/run/unifi-cert-renewer` for the
+  executor socket/runtime, `/run/secrets` for worker configuration and
+  credentials, and `/run/unifi-cert-renewer-policy` for the protected public
+  renewal policy;
+- one read-write bind mount: `/run/unifi-cert-renewer-lifecycle` for the
+  host-provisioned persistent `renewal.lock`;
 - only the required external shared network;
 - read-only root filesystem, all capabilities dropped,
   `no-new-privileges`, and restart policy `no`; and
@@ -643,7 +648,8 @@ After the supervised installation and independent verification succeed, the
 cron job or Unraid User Scripts schedule:
 
 ```bash
-flock --nonblock /run/lock/unifi-cert-renewer-renew.lock \
+flock --nonblock --conflict-exit-code 75 \
+  /run/lock/unifi-cert-renewer-renew.lock \
   docker compose -f deployment/renewer/compose.example.yaml run --rm renewer renew
 ```
 
@@ -651,8 +657,14 @@ Continue to set both production image references to the reviewed immutable
 release digests; a scheduler must not substitute mutable tags. Every external
 scheduled invocation must use the same operator-controlled host lock, through
 `flock` or equivalent overlap protection, so concurrent scheduler runs cannot
-both proceed through the due path. A daily invocation is safe when the
-certificate is outside the configured window:
+both proceed through the due path. Host-lock contention exits 75 before
+starting the renewer and therefore produces no application JSON. For images
+with the application lifecycle lock, application-lock contention also exits 75
+but emits JSON with `state=busy`. Use the output to distinguish these cases.
+The host scheduler lock and application lifecycle lock are separate; all
+invocations of each kind must share their respective lock inode per deployment.
+A daily invocation is safe when the certificate is outside the configured
+window:
 `renew` validates the current public certificate, returns exit status zero with
 `state=renewal_not_due`, and performs no CA read, CSR generation, OPNsense API
 access, signing, installation, restart, or transaction-state creation. At the

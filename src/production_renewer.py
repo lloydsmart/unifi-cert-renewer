@@ -1,9 +1,14 @@
 """Strict one-shot production entrypoint for the unprivileged renewer."""
 
+import errno
+import fcntl
 import json
 import math
+import os
+import stat
 import sys
 import unicodedata
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -27,6 +32,10 @@ MAX_CONFIG_BYTES = 64 * 1024
 MODES = frozenset({"inspect", "csr", "prepare", "install", "renew"})
 Mode = Literal["inspect", "csr", "prepare", "install", "renew"]
 DEFAULT_RENEW_BEFORE_DAYS = 30
+LIFECYCLE_DIRECTORY = "/run/unifi-cert-renewer-lifecycle"
+LIFECYCLE_LOCK = "renewal.lock"
+LIFECYCLE_OWNER_UID = 0
+LIFECYCLE_GROUP_GID = 1000
 _UNSAFE_TEXT_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
@@ -36,6 +45,70 @@ class ProductionConfigurationError(ValueError):
 
 class ProductionRunError(ValueError):
     """A bounded operator-facing one-shot failure."""
+
+
+class _LifecycleBusy(Exception):
+    pass
+
+
+@contextmanager
+def _lifecycle_lock():
+    """Serialize a deployment's complete signing and installation lifecycle."""
+
+    directory = lock = None
+    try:
+        directory = os.open(
+            LIFECYCLE_DIRECTORY,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+        )
+        info = os.fstat(directory)
+        if (
+            info.st_uid != LIFECYCLE_OWNER_UID
+            or info.st_gid != LIFECYCLE_GROUP_GID
+            or stat.S_IMODE(info.st_mode) != 0o750
+        ):
+            raise OSError("unsafe lifecycle directory")
+        lock = os.open(
+            LIFECYCLE_LOCK,
+            os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=directory,
+        )
+        file_info = os.fstat(lock)
+        if (
+            not stat.S_ISREG(file_info.st_mode)
+            or file_info.st_uid != LIFECYCLE_OWNER_UID
+            or file_info.st_gid != LIFECYCLE_GROUP_GID
+            or stat.S_IMODE(file_info.st_mode) != 0o660
+            or file_info.st_nlink != 1
+            or file_info.st_size != 0
+        ):
+            raise OSError("unsafe lifecycle lock")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in {errno.EAGAIN, errno.EWOULDBLOCK}:
+                raise _LifecycleBusy from None
+            raise
+        path_info = os.stat(LIFECYCLE_LOCK, dir_fd=directory, follow_symlinks=False)
+        current_directory = os.stat(LIFECYCLE_DIRECTORY, follow_symlinks=False)
+        if (
+            (file_info.st_dev, file_info.st_ino) != (path_info.st_dev, path_info.st_ino)
+            or (info.st_dev, info.st_ino)
+            != (current_directory.st_dev, current_directory.st_ino)
+            or os.fstat(lock).st_nlink != 1
+        ):
+            raise OSError("lifecycle lock replaced")
+    except _LifecycleBusy:
+        raise
+    except OSError:
+        raise ProductionRunError("Renewer lifecycle lock unavailable") from None
+    else:
+        yield
+    finally:
+        if lock is not None:
+            os.close(lock)
+        if directory is not None:
+            os.close(directory)
 
 
 class _DuplicateJSONKeyError(ValueError):
@@ -234,6 +307,16 @@ def run_one_shot(mode: Mode, *, now: datetime | None = None):
 
     if mode not in MODES:
         raise ProductionRunError("Renewer mode is invalid")
+    if mode in {"prepare", "install", "renew"}:
+        try:
+            with _lifecycle_lock():
+                return _run_one_shot(mode, now=now)
+        except _LifecycleBusy:
+            return {"mode": mode, "state": "busy", "renewal_complete": False}
+    return _run_one_shot(mode, now=now)
+
+
+def _run_one_shot(mode: Mode, *, now: datetime | None = None):
     try:
         config = load_production_config()
     except Exception:
@@ -319,7 +402,7 @@ def main(argv=None) -> int:
         print(str(error), file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
-    return 0
+    return 75 if result.get("state") == "busy" else 0
 
 
 if __name__ == "__main__":
