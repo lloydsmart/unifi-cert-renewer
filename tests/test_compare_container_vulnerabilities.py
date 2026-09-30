@@ -122,6 +122,37 @@ def test_upstream_only_finding_is_removed_and_passes() -> None:
     assert not comparison.introduced
 
 
+def test_patched_ubuntu_openssl_findings_are_removed_upstream_only() -> None:
+    packages = ("libssl3t64", "openssl", "openssl-provider-legacy")
+    upstream = report(
+        result(
+            *(
+                vulnerability(
+                    "CVE-2026-84782",
+                    package=package,
+                    installed="3.5.5-1ubuntu3.5",
+                    fixed="3.5.5-1ubuntu3.6",
+                    package_id=f"{package}@3.5.5-1ubuntu3.5",
+                )
+                for package in packages
+            ),
+            result_type="ubuntu",
+        )
+    )
+    derivative = report(result(result_type="ubuntu"))
+    for image_report in (upstream, derivative):
+        image_report["Metadata"]["OS"] = {"Family": "ubuntu", "Name": "26.04"}
+
+    comparison = compare(derivative, upstream)
+
+    assert not comparison.blocked
+    assert not comparison.introduced
+    assert not comparison.unexcepted_fixable
+    assert {finding.identity.package_name for finding in comparison.removed} == set(
+        packages
+    )
+
+
 def test_duplicate_records_are_deduplicated() -> None:
     finding = vulnerability("CVE-DUPLICATE")
     comparison = compare(report(result(finding, finding)), report())

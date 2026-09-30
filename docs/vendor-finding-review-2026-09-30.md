@@ -89,3 +89,28 @@ upstream image, package, platform, exposure, scanner identity, or applicability
 changes. There is no automatic extension: a further exception requires another
 explicit decision before expiry. [Issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63)
 tracks remediation.
+
+## Subsequent Ubuntu OpenSSL remediation
+
+After the 26-finding owner decision above, the next CI scan reported three new
+inherited, fixable HIGH findings for CVE-2026-84782 in the pinned `ls147`
+upstream: `libssl3t64`, `openssl`, and `openssl-provider-legacy` at
+`3.5.5-1ubuntu3.5`. These findings were not part of the owner's accepted 26.
+[Ubuntu USN-8847-1](https://ubuntu.com/security/notices/USN-8847-1) identifies
+`3.5.5-1ubuntu3.6` as the supported Ubuntu 26.04 fix floor for the OpenSSL
+source package.
+
+The UniFi derivative now explicitly upgrades only those three installed
+packages from the existing Ubuntu repositories. Its build and container
+packaging checks require each installed version to be at least
+`3.5.5-1ubuntu3.6` using `dpkg` version comparison. The exact-pinned `ls147`
+local build reached the package layer and installed `3.5.5-1ubuntu3.6` for
+all three packages from Ubuntu `resolute-updates/main`. The subsequent pip
+dependency step did not complete locally because TLS verification of
+`files.pythonhosted.org` failed; a complete derivative image and image scan
+therefore remain to be confirmed by CI.
+
+No exception was added for CVE-2026-84782. This remediation does not revise
+the owner's acceptance of the other 26 findings. If the patched derivative
+has no CVE-2026-84782 rows, the unchanged comparator reports the three
+unpatched upstream rows as removed upstream-only findings.
