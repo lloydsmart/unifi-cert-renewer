@@ -36,7 +36,7 @@ def config_value(policy):
 def parsed_config(installation_material):
     return production_renewer._parse_config(
         config_value(installation_material.request.policy),
-        policy_for(installation_material),
+        replace(policy_for(installation_material), lifetime_days=397),
     )
 
 
@@ -72,24 +72,26 @@ def test_loads_strict_configuration_from_fixed_secure_file(
     config_file.chmod(0o644)
 
     monkeypatch.setattr(
-        production_renewer, "load_policy", lambda: policy_for(installation_material)
+        production_renewer,
+        "load_policy",
+        lambda: replace(policy_for(installation_material), lifetime_days=397),
     )
     config = production_renewer.load_production_config()
 
     assert config.policy == installation_material.request.policy
     assert config.opnsense_base_url == "https://opnsense.test"
-    assert config.authority == policy_for(installation_material)
+    assert config.authority.lifetime_days == 397
     assert config.renew_before_days == 30
 
 
-@pytest.mark.parametrize("renew_before_days", [1, 45, 397])
+@pytest.mark.parametrize("renew_before_days", [1, 45, 396])
 def test_accepts_explicit_renewal_window(installation_material, renew_before_days):
     value = config_value(installation_material.request.policy)
     value["renew_before_days"] = renew_before_days
 
     assert (
         production_renewer._parse_config(
-            value, policy_for(installation_material)
+            value, replace(policy_for(installation_material), lifetime_days=397)
         ).renew_before_days
         == renew_before_days
     )
@@ -667,7 +669,9 @@ def test_due_renew_calls_existing_installation_orchestration_once(
         "certificate_description": config.certificate_description,
         "lifetime_days": config.authority.lifetime_days,
         "digest": config.authority.signing_digest,
+        "issued_signature_oid": config.authority.issued_signature_oid,
         "install": True,
+        "minimum_remaining_days": 45,
     }
     assert output["mode"] == "renew"
     assert output["state"] == "renewal_complete"
@@ -794,3 +798,97 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
         "restart: always",
     ):
         assert forbidden not in compose
+
+
+@pytest.mark.parametrize("window", [30, 31])
+def test_renew_only_rejects_threshold_at_or_above_lifetime_before_inspection(
+    installation_material, monkeypatch, window
+):
+    value = config_value(installation_material.request.policy)
+    value["renew_before_days"] = window
+    config = production_renewer._parse_config(value, policy_for(installation_material))
+    monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
+    monkeypatch.setattr(
+        production_renewer,
+        "build_production_unifi_client",
+        lambda authority: pytest.fail("renew must reject before UniFi inspection"),
+    )
+    with pytest.raises(
+        production_renewer.ProductionRunError, match="configuration validation"
+    ):
+        production_renewer.run_one_shot("renew")
+
+
+@pytest.mark.parametrize("window", [30, 31])
+@pytest.mark.parametrize("mode", ["inspect", "csr", "prepare", "install"])
+def test_manual_modes_allow_threshold_at_or_above_lifetime(
+    installation_material, monkeypatch, window, mode
+):
+    value = config_value(installation_material.request.policy)
+    value["renew_before_days"] = window
+    config = production_renewer._parse_config(value, policy_for(installation_material))
+    request = installation_material.request
+    plan = prepare_certificate_import(request)
+    result = InstallationStageResult(
+        "renewal_complete" if mode == "install" else "prepared",
+        request,
+        plan,
+        SimpleNamespace() if mode == "install" else None,
+    )
+
+    class ManualClient:
+        def inspect_current(self, policy):
+            return request.before
+
+        def request_csr(self, policy):
+            return request.csr_pem
+
+    monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
+    monkeypatch.setattr(
+        production_renewer,
+        "build_production_unifi_client",
+        lambda authority: ManualClient(),
+    )
+    monkeypatch.setattr(production_renewer, "OPNsenseClient", lambda *a, **kw: object())
+    monkeypatch.setattr(production_renewer, "run_to_installation", lambda **kw: result)
+    assert production_renewer.run_one_shot(mode)["mode"] == mode
+
+
+def test_renewal_window_one_day_below_lifetime_proceeds(
+    installation_material, monkeypatch
+):
+    value = config_value(installation_material.request.policy)
+    value["renew_before_days"] = 29
+    config = production_renewer._parse_config(value, policy_for(installation_material))
+    request = installation_material.request
+    due_state = public_state_expiring_at(
+        installation_material, installation_material.now + timedelta(days=20)
+    )
+    result = InstallationStageResult(
+        "renewal_complete",
+        request,
+        prepare_certificate_import(request),
+        SimpleNamespace(),
+    )
+
+    class DueClient:
+        def inspect_current(self, policy):
+            return due_state
+
+    calls = []
+    monkeypatch.setattr(production_renewer, "load_production_config", lambda: config)
+    monkeypatch.setattr(
+        production_renewer,
+        "build_production_unifi_client",
+        lambda authority: DueClient(),
+    )
+    monkeypatch.setattr(production_renewer, "OPNsenseClient", lambda *a, **kw: object())
+    monkeypatch.setattr(
+        production_renewer,
+        "run_to_installation",
+        lambda **kwargs: calls.append(kwargs) or result,
+    )
+    assert production_renewer.run_one_shot("renew", now=installation_material.now)[
+        "renewal_complete"
+    ]
+    assert calls[0]["minimum_remaining_days"] == 29

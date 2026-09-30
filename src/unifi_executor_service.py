@@ -16,6 +16,7 @@ import struct
 import sys
 import time
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 from csr import inspect_csr
 from renewal_policy import load_policy
@@ -45,6 +46,12 @@ from unifi_executor_files import (
 __all__ = ["SocketUnifiExecutionBoundary", "main"]
 
 PROTOCOL_VERSION = 2
+
+
+def _current_time() -> datetime:
+    return datetime.now(UTC)
+
+
 SOCKET_DIRECTORY = "/run/unifi-cert-renewer"
 SOCKET_PATH = f"{SOCKET_DIRECTORY}/executor.sock"
 SOCKET_LOCK = ".executor-socket.lock"
@@ -152,6 +159,7 @@ def _encode_import_request(request):
 
 def _decode_import_request(value, policy):
     value = _exact_dict(value, {"before", "csr_pem", "issued_certificate"})
+    freshness_reference_time = _current_time()
     before = _decode_state(value["before"])
     observed_spki = inspect_public_keystore_state(before).certificate.spki_sha256
     request = CertificateImportRequest(
@@ -163,6 +171,9 @@ def _decode_import_request(value, policy):
         ),
         trusted_ca_data=policy.ca_pem,
         lifetime_days=policy.lifetime_days,
+        expected_signature_hash=policy.signing_digest,
+        expected_signature_oid=policy.issued_signature_oid,
+        freshness_reference_time=freshness_reference_time,
     )
     plan = prepare_certificate_import(request)
     csr_info = inspect_csr(request.csr_pem)

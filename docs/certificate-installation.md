@@ -31,9 +31,12 @@ outside this state-changing orchestration and the executor.
 ## Validation and interface
 
 `CertificateImportRequest` contains raw public pre-import state, CSR, issued
-certificate, configured CA, identity policy, and lifetime. It is not an
-authorization token. Both client and executor call `prepare_certificate_import()`
-with current time. Fabricated plans cannot bypass validation. The executor also
+certificate, configured CA, identity policy, lifetime, exact issued
+signature hash/OID, and an internal issuance-freshness reference. It is not an
+authorization token. The worker captures its reference after retrieval; the
+executor replaces it with its own reference during protocol-v2 preflight. Both
+client and executor call `prepare_certificate_import()` with current time for
+validity and CA-path checks. Fabricated plans cannot bypass validation. The executor also
 checks fresh state before importing and uses `verify_certificate_import()` for
 the stage and committed canonical file. The client independently verifies the
 post-import public result before leaving its exclusive context.
@@ -42,12 +45,30 @@ Preparation requires PKCS12/SUN, alias `unifi`, `PrivateKeyEntry`, matching chai
 length, and unchanged current/configured/CSR/issued SPKI. Subject, DNS/IP SANs,
 validity, leaf constraints, and the configured CA path are validated. One directly
 issuing self-signed CA is currently supported; intermediate chains, multiple
-anchors, and invalid CA self-signatures are rejected.
+anchors, and invalid CA self-signatures are rejected. At issuance preflight,
+`freshness_reference - 5 minutes <= notBefore <= freshness_reference`; a
+future-dated leaf is rejected. Later checks reuse that fixed reference while
+requiring `notBefore <= current_time < notAfter` and validating the CA path at
+current time. `notAfter - notBefore` must equal the requested whole-day lifetime
+exactly. Its signature hash and
+algorithm OID must equal the protected signing policy. The issuing CA
+certificate's own signature digest does not select the leaf signature policy.
+
+Key Usage must be present with only Digital Signature and Key Encipherment set.
+Content Commitment, Data Encipherment, Key Agreement, Certificate Sign, and
+CRL Sign must all be clear.
 
 Extended Key Usage must be exactly `{serverAuth}` or exactly
 `{serverAuth, 1.3.6.1.5.5.8.2.2}`. The latter is the stock OPNsense
 `server_cert` profile. A missing EKU, either OID alone without `serverAuth`, any
-superset, or any additional OID is rejected.
+superset, or any additional OID is rejected. Other non-critical OPNsense
+extensions, including Netscape Cert Type, Netscape Comment, SKI, and AKI, are
+tolerated when the required policy fields pass.
+
+For automatic `renew`, `renew_before_days` must be less than `lifetime_days`
+before inspection. The issued certificate must expire strictly after the
+post-retrieval validation time plus `renew_before_days`. Explicit `prepare` and `install` do
+not apply this renewal-window check.
 
 `CertificateImportPlan` contains only public reply bytes, exact leaf-first DER
 chain, and issued metadata. **It no longer contains argv.** CSR execution accepts

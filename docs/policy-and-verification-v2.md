@@ -79,9 +79,14 @@ Protocol v2 has five fixed operations: `inspect`, `generate_csr`, `install`,
 `recover` and `verify_pending`. CSR generation accepts the policy digest and
 expected SPKI assertion, then uses executor-owned identity fields. Installation
 accepts the digest plus public before-state, CSR and issued certificate. The
-executor reconstructs the import request using its own subject/SAN, CA and
-lifetime policy and checks the fixed CSR and issued-leaf signature policies.
-Mismatch or unknown fields fail before the journal or UniFi service changes.
+executor reconstructs the import request using its own subject/SAN, CA,
+lifetime, and exact issued-leaf signature hash/OID policy. Common leaf validation
+checks that signature policy before import; the executor also compares it again
+against its protected policy. The executor stamps its own issuance-freshness
+reference during decode and omits it from the wire. Later import and post-import
+checks reuse that reference while checking current validity and CA trust at the
+current time. The fixed CSR signature policy remains separate. Mismatch or
+unknown fields fail before the journal or UniFi service changes.
 Protocol v1 mutation and `finalize` requests are rejected.
 
 `verify_pending` accepts no arguments. Under the transaction lock, the executor

@@ -1,5 +1,6 @@
 import traceback
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -7,6 +8,7 @@ from conftest import public_pem
 from cryptography import x509
 from test_certificate_installation import FakeBoundary
 
+import unifi_cert_renewer
 from opnsense_client import CA_LIST_PATH, CERT_ADD_PATH, OPNsenseClient
 from unifi_cert_renewer import RenewalStageError, run_to_installation
 from unifi_client import UnifiClient
@@ -37,6 +39,8 @@ def workflow(installation_material):
         ca_description="Test root",
         certificate_description="UniFi HTTPS",
         lifetime_days=30,
+        digest="sha256",
+        issued_signature_oid="1.2.840.113549.1.1.11",
     )
     return boundary, opnsense, arguments
 
@@ -290,3 +294,85 @@ def test_interrupted_or_ambiguous_import_never_returns_a_result(
     assert boundary.events[-1] == "inspect"
     assert recovered == boundary.current
     assert results == []  # A fresh keystore read cannot establish live TLS success.
+
+
+@pytest.mark.parametrize("minimum_days, accepted", [(30, False), (29, True)])
+def test_automatic_minimum_remaining_lifetime_is_strict(
+    workflow, installation_material, monkeypatch, minimum_days, accepted
+):
+    boundary, _, arguments = workflow
+    validation_time = installation_material.now - timedelta(minutes=1)
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: validation_time)
+    if accepted:
+        result = run_to_installation(
+            **arguments, install=True, minimum_remaining_days=minimum_days
+        )
+        assert result.renewal_complete
+        assert "import" in boundary.events
+    else:
+        with pytest.raises(RenewalStageError, match="issued certificate"):
+            run_to_installation(
+                **arguments, install=True, minimum_remaining_days=minimum_days
+            )
+        assert "import" not in boundary.events
+        assert "lock" not in boundary.events
+
+
+def test_explicit_prepare_and_install_do_not_apply_renewal_window(workflow):
+    boundary, _, arguments = workflow
+    prepared = run_to_installation(**arguments)
+    assert prepared.state == "prepared"
+    installed = run_to_installation(**arguments, install=True)
+    assert installed.renewal_complete
+    assert "import" in boundary.events
+
+
+def test_worker_reuses_freshness_reference_after_slow_install(
+    workflow, installation_material, monkeypatch
+):
+    import certificate as certificate_module
+
+    boundary, _, arguments = workflow
+    clock = {"now": installation_material.now}
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: clock["now"])
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+    original_import = boundary.import_certificate_reply
+
+    def slow_import(request, *, expected_before):
+        result = original_import(request, expected_before=expected_before)
+        clock["now"] += timedelta(minutes=6)
+        return result
+
+    monkeypatch.setattr(boundary, "import_certificate_reply", slow_import)
+    result = run_to_installation(**arguments, install=True)
+    assert result.renewal_complete
+    assert result.request.freshness_reference_time == installation_material.now
+    assert clock["now"] > result.request.freshness_reference_time + timedelta(minutes=5)
+    assert "import" in boundary.events
+
+
+def test_worker_captures_fresh_time_after_certificate_retrieval(
+    workflow, installation_material, monkeypatch
+):
+    import certificate as certificate_module
+
+    _, opnsense, arguments = workflow
+    clock = {"now": installation_material.now}
+    not_before = installation_material.now + timedelta(minutes=2)
+    issued = public_pem(
+        installation_material.issue(
+            not_before=not_before, not_after=not_before + timedelta(days=30)
+        )
+    )
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: clock["now"])
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+
+    def retrieve(uuid):
+        clock["now"] = not_before
+        return issued
+
+    opnsense.get_certificate.side_effect = retrieve
+    result = run_to_installation(**arguments)
+    assert result.state == "prepared"
+    assert result.request.freshness_reference_time == not_before
+    assert result.plan.issued.not_valid_before == not_before

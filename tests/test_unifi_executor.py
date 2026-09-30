@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1502,3 +1503,23 @@ sys.exit(1)
         check=False,
     )
     assert result.returncode == 0
+
+
+def test_frozen_freshness_survives_shutdown_longer_than_skew(platform, monkeypatch):
+    import certificate as certificate_module
+
+    p = platform
+    clock = {"now": p.request.freshness_reference_time}
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+    original_stop = executor._Service.stop
+
+    def stop(self):
+        original_stop(self)
+        clock["now"] += timedelta(minutes=6)
+
+    monkeypatch.setattr(executor._Service, "stop", stop)
+    installed = install(p)
+    assert installed.certificate == p.plan.issued
+    assert clock["now"] > p.request.freshness_reference_time + timedelta(minutes=5)
+    assert p.events.count("stop") == 1
+    assert p.service.up

@@ -8,6 +8,7 @@ import stat
 import struct
 import threading
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,7 +21,9 @@ from test_unifi_executor import install
 from test_unifi_executor import platform as platform
 from test_unifi_tls import _serve_once, _server_context
 
+import certificate as certificate_module
 import unifi_executor as executor
+import unifi_executor_client as client
 import unifi_executor_files as executor_files
 import unifi_executor_service as service
 import unifi_tls
@@ -61,7 +64,12 @@ class FakeExecutor:
 
     def import_certificate_reply(self, request, *, expected_before):
         self._fail()
-        assert request == self.request
+        assert (
+            replace(
+                request, freshness_reference_time=self.request.freshness_reference_time
+            )
+            == self.request
+        )
         assert expected_before == self.state
         self.events.append("install")
         self.state = PublicKeystoreState(metadata(2), self.plan.certificate_chain_der)
@@ -239,7 +247,7 @@ def test_policy_digest_mismatch_rejects_before_exclusive_or_shutdown(protocol):
 
 @pytest.mark.parametrize(
     "change",
-    ["subject", "san", "ca", "lifetime", "signature"],
+    ["subject", "san", "ca", "lifetime", "signature_sha384", "signature_sha512"],
 )
 def test_nonconforming_leaf_rejects_before_exclusive_or_shutdown(
     protocol, installation_material, change
@@ -251,7 +259,8 @@ def test_nonconforming_leaf_rejects_before_exclusive_or_shutdown(
         "san": {"sans": [x509.DNSName("other.test")]},
         "ca": {"signing_key": material.key},
         "lifetime": {"not_after": material.now + timedelta(days=60)},
-        "signature": {"signing_hash": hashes.SHA384()},
+        "signature_sha384": {"signing_hash": hashes.SHA384()},
+        "signature_sha512": {"signing_hash": hashes.SHA512()},
     }
     leaf = public_pem(material.issue(**options[change]))
     request = service._encode_import_request(executor.request)
@@ -1406,3 +1415,78 @@ def test_client_surface_has_no_path_command_alias_or_service_parameters(
     assert set(vars(boundary)) == {"_policy", "_exclusive", "_installed"}
     with pytest.raises(TypeError):
         service.SocketUnifiExecutionBoundary(socket_path="/tmp/other")
+
+
+def test_executor_stamps_own_freshness_reference_outside_protocol_v2(
+    installation_material, monkeypatch
+):
+    request = installation_material.request
+    executor_time = installation_material.now
+    monkeypatch.setattr(service, "_current_time", lambda: executor_time)
+    worker_request = replace(
+        request, freshness_reference_time=executor_time - timedelta(days=10)
+    )
+    wire = client._encode_import_request(worker_request)
+    assert wire == service._encode_import_request(worker_request)
+    assert set(wire) == {"before", "csr_pem", "issued_certificate"}
+    decoded = service._decode_import_request(wire, policy_for(installation_material))
+    assert decoded.freshness_reference_time == executor_time
+    wire["freshness_reference_time"] = executor_time.isoformat()
+    with pytest.raises(ValueError):
+        service._decode_import_request(wire, policy_for(installation_material))
+
+
+def test_stale_leaf_at_executor_preflight_rejects_before_journal_or_shutdown(
+    platform, monkeypatch
+):
+    p = platform
+    monkeypatch.setattr(
+        service,
+        "_current_time",
+        lambda: p.request.freshness_reference_time + timedelta(minutes=6),
+    )
+    handler = service._ProtocolHandler(lambda policy: p.adapter, p.policy)
+    with pytest.raises(ValueError, match="backdated"):
+        handler.dispatch(
+            service._request(
+                "install",
+                {
+                    "policy_digest": p.policy.digest,
+                    "request": service._encode_import_request(p.request),
+                },
+            )
+        )
+    assert p.events == []
+    assert not (p.root / executor_files.JOURNAL).exists()
+    assert p.service.up
+
+
+def test_executor_protocol_freezes_freshness_before_slow_service_shutdown(
+    platform, monkeypatch
+):
+    p = platform
+    clock = {"now": p.request.freshness_reference_time}
+    monkeypatch.setattr(service, "_current_time", lambda: clock["now"])
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+    original_stop = executor._Service.stop
+
+    def stop(self):
+        original_stop(self)
+        clock["now"] += timedelta(minutes=6)
+
+    monkeypatch.setattr(executor._Service, "stop", stop)
+    handler = service._ProtocolHandler(lambda policy: p.adapter, p.policy)
+    response = handler.dispatch(
+        service._request(
+            "install",
+            {
+                "policy_digest": p.policy.digest,
+                "request": service._encode_import_request(p.request),
+            },
+        )
+    )
+    after = service._decode_state(response["state"])
+    assert after.certificate_chain_der == p.plan.certificate_chain_der
+    assert clock["now"] > p.request.freshness_reference_time + timedelta(minutes=5)
+    assert p.events.count("stop") == 1
+    assert p.service.up

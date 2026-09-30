@@ -482,6 +482,8 @@ class ProductionUnifiExecutor:
             or request.policy.ip_sans != self._policy.ip_sans
             or request.trusted_ca_data != self._policy.ca_pem
             or request.lifetime_days != self._policy.lifetime_days
+            or request.expected_signature_hash != self._policy.signing_digest
+            or request.expected_signature_oid != self._policy.issued_signature_oid
             or plan.issued.signature_hash_algorithm != self._policy.signing_digest
             or plan.issued.signature_algorithm_oid != self._policy.issued_signature_oid
         ):

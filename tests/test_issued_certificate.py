@@ -96,7 +96,8 @@ def _issued_certificate(
     extra_sans: tuple[x509.GeneralName, ...] = (),
     basic_constraints: bool | None = False,
     eku: tuple[x509.ObjectIdentifier, ...] | None = (ExtendedKeyUsageOID.SERVER_AUTH,),
-    key_usage: str | None = "server",
+    key_usage: str | x509.KeyUsage | None = "server",
+    signing_hash: hashes.HashAlgorithm | None = None,
     not_before: datetime = NOW - timedelta(minutes=1),
     not_after: datetime = NOW - timedelta(minutes=1) + timedelta(days=30),
 ) -> x509.Certificate:
@@ -142,24 +143,23 @@ def _issued_certificate(
     if eku is not None:
         builder = builder.add_extension(x509.ExtendedKeyUsage(eku), critical=False)
     if key_usage is not None:
-        permits_digital_signature = key_usage in {"digital-signature", "server"}
-        permits_key_encipherment = key_usage in {"key-encipherment", "server"}
-        permits_ca = key_usage == "ca"
-        builder = builder.add_extension(
-            x509.KeyUsage(
-                digital_signature=permits_digital_signature,
+        if isinstance(key_usage, x509.KeyUsage):
+            usage = key_usage
+        else:
+            permits_ca = key_usage == "ca"
+            usage = x509.KeyUsage(
+                digital_signature=key_usage in {"digital-signature", "server"},
                 content_commitment=False,
-                key_encipherment=permits_key_encipherment,
+                key_encipherment=key_usage in {"key-encipherment", "server"},
                 data_encipherment=False,
                 key_agreement=False,
                 key_cert_sign=permits_ca,
                 crl_sign=permits_ca,
                 encipher_only=False,
                 decipher_only=False,
-            ),
-            critical=True,
-        )
-    return builder.sign(material.ca_key, hashes.SHA256())
+            )
+        builder = builder.add_extension(usage, critical=True)
+    return builder.sign(material.ca_key, signing_hash or hashes.SHA256())
 
 
 def _pem(certificate: x509.Certificate) -> bytes:
@@ -182,6 +182,9 @@ def _validate(
         csr_info or material.csr_info,
         trusted_ca_data=trusted_ca_data or _ca_pem(material),
         lifetime_days=30,
+        expected_signature_hash="sha256",
+        expected_signature_oid="1.2.840.113549.1.1.11",
+        freshness_reference_time=NOW,
         now=NOW,
     )
 
@@ -241,21 +244,24 @@ def test_rejects_unsupported_server_eku_profiles(material, eku) -> None:
         _validate(material, certificate)
 
 
-def test_accepts_der_and_explicitly_allows_absent_key_usage(material) -> None:
-    certificate = _issued_certificate(material, key_usage=None)
+def test_accepts_der_with_exact_key_usage(material) -> None:
+    certificate = _issued_certificate(material)
 
     info = validate_issued_certificate(
         certificate.public_bytes(serialization.Encoding.DER),
         material.csr_info,
         trusted_ca_data=_ca_pem(material),
         lifetime_days=30,
+        expected_signature_hash="sha256",
+        expected_signature_oid="1.2.840.113549.1.1.11",
+        freshness_reference_time=NOW,
         now=NOW,
     )
 
     assert info.spki_sha256 == material.csr_info.spki_sha256
 
 
-@pytest.mark.parametrize("key_usage", ["digital-signature", "server"])
+@pytest.mark.parametrize("key_usage", ["server"])
 def test_accepts_required_rsa_server_key_usages(material, key_usage) -> None:
     certificate = _issued_certificate(material, key_usage=key_usage)
 
@@ -339,9 +345,9 @@ def test_rejects_unsupported_san_identity_type(material) -> None:
         ({"basic_constraints": None}, "missing Basic Constraints"),
         ({"basic_constraints": True}, "CA to FALSE"),
         ({"eku": None}, "missing Extended Key Usage"),
-        ({"key_usage": "ca"}, "CA signing"),
-        ({"key_usage": "key-encipherment"}, "digitalSignature"),
-        ({"key_usage": "neither"}, "digitalSignature"),
+        ({"key_usage": "ca"}, "Key Usage"),
+        ({"key_usage": "key-encipherment"}, "Key Usage"),
+        ({"key_usage": "neither"}, "Key Usage"),
     ],
 )
 def test_rejects_inappropriate_leaf_constraints(material, overrides, message) -> None:
@@ -434,6 +440,9 @@ def test_rejects_malformed_certificate(material, certificate_data) -> None:
             material.csr_info,
             trusted_ca_data=_ca_pem(material),
             lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.113549.1.1.11",
+            freshness_reference_time=NOW,
             now=NOW,
         )
 
@@ -447,6 +456,9 @@ def test_rejects_oversized_and_multiple_certificates(material) -> None:
             material.csr_info,
             trusted_ca_data=_ca_pem(material),
             lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.113549.1.1.11",
+            freshness_reference_time=NOW,
             now=NOW,
         )
     with pytest.raises(IssuedCertificateValidationError, match="malformed"):
@@ -455,6 +467,9 @@ def test_rejects_oversized_and_multiple_certificates(material) -> None:
             material.csr_info,
             trusted_ca_data=_ca_pem(material),
             lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.113549.1.1.11",
+            freshness_reference_time=NOW,
             now=NOW,
         )
 
@@ -545,3 +560,221 @@ def test_tab_heavy_malformed_bundle_is_bounded_and_scanned_monotonically(
     attack = b"\t" * (MAX_TRUST_BUNDLE_BYTES - len(suffix)) + suffix
     with pytest.raises(IssuedCertificateValidationError, match="malformed"):
         certificate_module._load_trust_certificates(attack)
+
+
+@pytest.mark.parametrize(
+    ("offset", "accepted"),
+    [
+        (-timedelta(minutes=5, seconds=1), False),
+        (-timedelta(minutes=5), True),
+        (timedelta(0), True),
+        (timedelta(seconds=1), False),
+        (timedelta(minutes=5), False),
+    ],
+)
+def test_issuance_freshness_boundaries(material, offset, accepted) -> None:
+    not_before = NOW + offset
+    certificate = _issued_certificate(
+        material, not_before=not_before, not_after=not_before + timedelta(days=30)
+    )
+    if accepted:
+        assert _validate(material, certificate).not_valid_before == not_before
+    else:
+        with pytest.raises(IssuedCertificateValidationError):
+            _validate(material, certificate)
+
+
+@pytest.mark.parametrize("deviation", [-1, 1, -86400, 86400])
+def test_issued_lifetime_must_match_to_the_second(material, deviation) -> None:
+    not_before = NOW - timedelta(minutes=1)
+    certificate = _issued_certificate(
+        material,
+        not_before=not_before,
+        not_after=not_before + timedelta(days=30, seconds=deviation),
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="lifetime"):
+        _validate(material, certificate)
+
+
+def test_heavily_backdated_leaf_with_exact_duration_is_rejected(material) -> None:
+    not_before = NOW - timedelta(days=29)
+    certificate = _issued_certificate(
+        material, not_before=not_before, not_after=not_before + timedelta(days=30)
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="backdated"):
+        _validate(material, certificate)
+
+
+@pytest.mark.parametrize(
+    "extra_bit",
+    [
+        "content_commitment",
+        "data_encipherment",
+        "key_agreement",
+        "key_cert_sign",
+        "crl_sign",
+    ],
+)
+def test_rejects_each_extra_key_usage_bit(material, extra_bit) -> None:
+    flags = dict(
+        digital_signature=True,
+        content_commitment=False,
+        key_encipherment=True,
+        data_encipherment=False,
+        key_agreement=False,
+        key_cert_sign=False,
+        crl_sign=False,
+        encipher_only=False,
+        decipher_only=False,
+    )
+    flags[extra_bit] = True
+    certificate = _issued_certificate(material, key_usage=x509.KeyUsage(**flags))
+    with pytest.raises(IssuedCertificateValidationError, match="Key Usage"):
+        _validate(material, certificate)
+
+
+def test_rejects_missing_key_usage(material) -> None:
+    with pytest.raises(IssuedCertificateValidationError, match="missing Key Usage"):
+        _validate(material, _issued_certificate(material, key_usage=None))
+
+
+def test_rejects_any_extended_key_usage(material) -> None:
+    certificate = _issued_certificate(
+        material,
+        eku=(
+            ExtendedKeyUsageOID.SERVER_AUTH,
+            ExtendedKeyUsageOID.ANY_EXTENDED_KEY_USAGE,
+        ),
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="Extended Key Usage"):
+        _validate(material, certificate)
+
+
+@pytest.mark.parametrize(
+    ("dns_sans", "ip_sans", "message"),
+    [
+        (("unifi.test", "unifi.test"), ("192.0.2.10", "2001:db8::10"), "DNS SAN"),
+        (("unifi.test", "controller.test"), ("192.0.2.10", "192.0.2.10"), "IP SAN"),
+    ],
+)
+def test_duplicate_identity_cannot_replace_an_expected_san(
+    material, dns_sans, ip_sans, message
+) -> None:
+    with pytest.raises(IssuedCertificateValidationError, match=message):
+        _validate(
+            material, _issued_certificate(material, dns_sans=dns_sans, ip_sans=ip_sans)
+        )
+
+
+@pytest.mark.parametrize("hash_algorithm", [hashes.SHA384(), hashes.SHA512()])
+def test_generic_sha2_hash_does_not_override_exact_signature_policy(
+    material, hash_algorithm
+) -> None:
+    certificate = _issued_certificate(material, signing_hash=hash_algorithm)
+    with pytest.raises(IssuedCertificateValidationError, match="signature differs"):
+        _validate(material, certificate)
+
+
+def test_exact_signature_oid_is_required_even_when_hash_matches(material) -> None:
+    certificate = _issued_certificate(material)
+    with pytest.raises(IssuedCertificateValidationError, match="signature differs"):
+        validate_issued_certificate(
+            _pem(certificate),
+            material.csr_info,
+            trusted_ca_data=_ca_pem(material),
+            lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.10045.4.3.2",
+            freshness_reference_time=NOW,
+            now=NOW,
+        )
+
+
+def test_rejects_duplicate_eku_oid(material) -> None:
+    certificate = _issued_certificate(
+        material,
+        eku=(ExtendedKeyUsageOID.SERVER_AUTH, ExtendedKeyUsageOID.SERVER_AUTH),
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="Extended Key Usage"):
+        _validate(material, certificate)
+
+
+def test_future_leaf_fails_current_path_verification(material) -> None:
+    not_before = NOW + timedelta(seconds=1)
+    certificate = _issued_certificate(
+        material, not_before=not_before, not_after=not_before + timedelta(days=30)
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="not yet valid"):
+        _validate(material, certificate)
+    with pytest.raises(IssuedCertificateValidationError, match="configured CA"):
+        certificate_module._verify_ca_trust(
+            certificate, _ca_pem(material), material.csr_info, NOW
+        )
+
+
+def test_ca_path_verification_uses_current_time_after_freshness_preflight(
+    material,
+) -> None:
+    ca = (
+        x509.CertificateBuilder()
+        .subject_name(material.ca_certificate.subject)
+        .issuer_name(material.ca_certificate.subject)
+        .public_key(material.ca_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(NOW - timedelta(days=1))
+        .not_valid_after(NOW + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), True)
+        .add_extension(
+            x509.KeyUsage(False, False, False, False, False, True, True, False, False),
+            True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(material.ca_key.public_key()),
+            False,
+        )
+        .sign(material.ca_key, hashes.SHA256())
+    )
+    leaf = _issued_certificate(material)
+    assert validate_issued_certificate(
+        _pem(leaf),
+        material.csr_info,
+        trusted_ca_data=_pem(ca),
+        lifetime_days=30,
+        expected_signature_hash="sha256",
+        expected_signature_oid="1.2.840.113549.1.1.11",
+        freshness_reference_time=NOW,
+        now=NOW,
+    )
+    with pytest.raises(IssuedCertificateValidationError, match="configured CA"):
+        validate_issued_certificate(
+            _pem(leaf),
+            material.csr_info,
+            trusted_ca_data=_pem(ca),
+            lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.113549.1.1.11",
+            freshness_reference_time=NOW,
+            now=NOW + timedelta(days=1, seconds=1),
+        )
+
+
+def test_leaf_postdating_frozen_freshness_reference_fails_even_when_valid_now(
+    material,
+) -> None:
+    not_before = NOW + timedelta(seconds=1)
+    leaf = _issued_certificate(
+        material, not_before=not_before, not_after=not_before + timedelta(days=30)
+    )
+    with pytest.raises(
+        IssuedCertificateValidationError, match="postdates freshness reference"
+    ):
+        validate_issued_certificate(
+            _pem(leaf),
+            material.csr_info,
+            trusted_ca_data=_ca_pem(material),
+            lifetime_days=30,
+            expected_signature_hash="sha256",
+            expected_signature_oid="1.2.840.113549.1.1.11",
+            freshness_reference_time=NOW,
+            now=NOW + timedelta(minutes=2),
+        )
