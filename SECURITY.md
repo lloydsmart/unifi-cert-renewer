@@ -678,32 +678,33 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-09-26 Lloyd Smart explicitly approved the 25 inherited vendor-image
-findings in [the exception registry](.security/container-exceptions.json), with
-Lloyd Smart as owner and reviewer. These exceptions expire at **00:00 UTC on
-2026-10-01**. They apply only to Linux amd64 and upstream digest
+On 2026-09-30 Lloyd Smart, as owner and reviewer, explicitly approved temporary
+risk acceptance for 26 inherited vendor-image findings: 19 HIGH and 7 CRITICAL.
+The [exception registry](.security/container-exceptions.json) scopes each record
+to Linux amd64, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
-with the exact package, installed version, path, advisory, severity, and fix
-metadata recorded in each entry. They do not apply to introduced findings.
+and its exact scanner package, installed version, path, advisory, severity, and
+fix text. Acceptance does not transfer to another digest, platform, package
+identity, or introduced finding. The exceptions expire at **00:00 UTC on
+2026-10-05**; the scanner fails closed after expiry, with no automatic extension.
 
-The [26 September vendor-image review](docs/vendor-image-review-2026-09-26.md)
-records qualification of LinuxServer `10.6.106-ls147`, including its byte-identical
-UniFi JAR payload relative to the previously reviewed `ls146` image and the
-additional applicability review for the two Bouncy Castle findings. The
+The [30 September finding review](docs/vendor-finding-review-2026-09-30.md)
+records the fresh scan, the new Jackson finding `CVE-2026-68497`, and remaining
+applicability uncertainty. LinuxServer `ls148` was reviewed, but its UniFi JAR
+payload and all 26 HIGH/CRITICAL findings are unchanged, so it does not reduce
+this finding set. The earlier
+[26 September vendor-image review](docs/vendor-image-review-2026-09-26.md) and
 [17 September per-finding review](docs/vendor-finding-review-2026-09-17.md)
-remains the detailed applicability record for the other 23 unchanged findings.
+remain historical evidence.
 
-The operator reports all management, guest-portal, and device-facing endpoints
-restricted to trusted LAN/VPN users and devices. That restriction has not been
-independently verified, and no advisory-specific mitigation is established.
-Compromised or malicious permitted clients, peers, devices, and stored content
-remain residual risks.
-
-The decision permits this exact temporary policy exception while awaiting
-vendor-supported fixes or applicability evidence; it does not approve deployment,
-migration, release, or merging a PR. Review on any exposure or scope change and
-before expiry. The scanner fails closed after expiry; renewal requires a new
-explicit decision. Future accepted risks must be documented here.
+The operator reports management, guest-portal, and device-facing endpoints
+restricted to trusted LAN/VPN users and devices. This was not independently
+verified, and no advisory-specific mitigation has been established. Malicious
+or compromised permitted clients, devices, peers, and stored content remain
+residual risks. Prefer a vendor-supported fixed image. Re-review on upstream,
+package, platform, exposure, scanner identity, or applicability change and
+before expiry. [Issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63)
+tracks remediation. This acceptance is not remediation or deployment approval.
 
 ## Security Review Triggers
 

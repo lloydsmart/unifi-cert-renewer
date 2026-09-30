@@ -97,6 +97,15 @@ docker run --rm \
         test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-recovery/run
         test -x /etc/s6-overlay/s6-rc.d/init-unifi-cert-renewer-secure-state/run
         test -x /etc/s6-overlay/s6-rc.d/svc-unifi-cert-renewer-executor/run
+        for package in libssl3t64 openssl openssl-provider-legacy; do
+            version=$(dpkg-query -W -f="\${Version}" "$package")
+            if ! dpkg --compare-versions "$version" ge 3.5.5-1ubuntu3.6; then
+                printf "UniFi %s version %s is below the Ubuntu security fix.\n" \
+                    "$package" "$version" >&2
+                exit 1
+            fi
+            printf "Validated UniFi %s=%s\n" "$package" "$version"
+        done
     '
 
 printf '%s\n' 'Validated renewer and UniFi image packaging boundaries'
