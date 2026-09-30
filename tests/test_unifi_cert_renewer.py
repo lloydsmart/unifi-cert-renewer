@@ -1,12 +1,17 @@
 import traceback
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
 from conftest import public_pem
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from test_certificate_installation import FakeBoundary
+from test_renewal_policy import _ec_issued_leaf
+from test_renewal_policy import ec_issuing_ca as ec_issuing_ca
 
+import unifi_cert_renewer
 from opnsense_client import CA_LIST_PATH, CERT_ADD_PATH, OPNsenseClient
 from unifi_cert_renewer import RenewalStageError, run_to_installation
 from unifi_client import UnifiClient
@@ -37,6 +42,8 @@ def workflow(installation_material):
         ca_description="Test root",
         certificate_description="UniFi HTTPS",
         lifetime_days=30,
+        digest="sha256",
+        issued_signature_oid="1.2.840.113549.1.1.11",
     )
     return boundary, opnsense, arguments
 
@@ -290,3 +297,148 @@ def test_interrupted_or_ambiguous_import_never_returns_a_result(
     assert boundary.events[-1] == "inspect"
     assert recovered == boundary.current
     assert results == []  # A fresh keystore read cannot establish live TLS success.
+
+
+@pytest.mark.parametrize("minimum_days, accepted", [(30, False), (29, True)])
+def test_automatic_minimum_remaining_lifetime_is_strict(
+    workflow, installation_material, monkeypatch, minimum_days, accepted
+):
+    boundary, _, arguments = workflow
+    validation_time = installation_material.now - timedelta(minutes=1)
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: validation_time)
+    if accepted:
+        result = run_to_installation(
+            **arguments, install=True, minimum_remaining_days=minimum_days
+        )
+        assert result.renewal_complete
+        assert "import" in boundary.events
+    else:
+        with pytest.raises(RenewalStageError, match="issued certificate"):
+            run_to_installation(
+                **arguments, install=True, minimum_remaining_days=minimum_days
+            )
+        assert "import" not in boundary.events
+        assert "lock" not in boundary.events
+
+
+def test_explicit_prepare_and_install_do_not_apply_renewal_window(workflow):
+    boundary, _, arguments = workflow
+    prepared = run_to_installation(**arguments)
+    assert prepared.state == "prepared"
+    installed = run_to_installation(**arguments, install=True)
+    assert installed.renewal_complete
+    assert "import" in boundary.events
+
+
+def test_worker_reuses_freshness_reference_after_slow_install(
+    workflow, installation_material, monkeypatch
+):
+    import certificate as certificate_module
+
+    boundary, _, arguments = workflow
+    clock = {"now": installation_material.now}
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: clock["now"])
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+    original_import = boundary.import_certificate_reply
+
+    def slow_import(request, *, expected_before):
+        result = original_import(request, expected_before=expected_before)
+        clock["now"] += timedelta(minutes=6)
+        return result
+
+    monkeypatch.setattr(boundary, "import_certificate_reply", slow_import)
+    result = run_to_installation(**arguments, install=True)
+    assert result.renewal_complete
+    assert result.request.freshness_reference_time == installation_material.now
+    assert clock["now"] > result.request.freshness_reference_time + timedelta(minutes=5)
+    assert "import" in boundary.events
+
+
+def test_worker_captures_fresh_time_after_certificate_retrieval(
+    workflow, installation_material, monkeypatch
+):
+    import certificate as certificate_module
+
+    _, opnsense, arguments = workflow
+    clock = {"now": installation_material.now}
+    not_before = installation_material.now + timedelta(minutes=2)
+    issued = public_pem(
+        installation_material.issue(
+            not_before=not_before, not_after=not_before + timedelta(days=30)
+        )
+    )
+    monkeypatch.setattr(unifi_cert_renewer, "_current_time", lambda: clock["now"])
+    monkeypatch.setattr(certificate_module, "_current_time", lambda: clock["now"])
+
+    def retrieve(uuid):
+        clock["now"] = not_before
+        return issued
+
+    opnsense.get_certificate.side_effect = retrieve
+    result = run_to_installation(**arguments)
+    assert result.state == "prepared"
+    assert result.request.freshness_reference_time == not_before
+    assert result.plan.issued.not_valid_before == not_before
+
+
+@pytest.mark.parametrize(
+    ("digest", "issued_signature_oid"),
+    [
+        ("sha256", ""),
+        ("sha256", "not-an-oid"),
+        ("sha256", "1.2.840.10045.4.3.2"),
+        ("sha384", "1.2.840.113549.1.1.11"),
+        ("sha512", "1.2.840.113549.1.1.12"),
+    ],
+)
+def test_direct_issuance_rejects_invalid_rsa_signature_policy_before_any_io(
+    workflow, digest, issued_signature_oid
+):
+    boundary, opnsense, arguments = workflow
+    arguments.update(digest=digest, issued_signature_oid=issued_signature_oid)
+    with pytest.raises(RenewalStageError, match="configuration validation"):
+        run_to_installation(**arguments)
+    assert boundary.events == []
+    assert opnsense.mock_calls == []
+
+
+def test_direct_issuance_accepts_exact_rsa_sha256_signature_policy(workflow):
+    boundary, opnsense, arguments = workflow
+    result = run_to_installation(**arguments)
+    assert result.plan.issued.signature_hash_algorithm == "sha256"
+    assert result.plan.issued.signature_algorithm_oid == "1.2.840.113549.1.1.11"
+    assert "sign" in boundary.events
+    opnsense.sign_csr.assert_called_once()
+
+
+def test_direct_issuance_accepts_exact_ec_sha256_signature_policy(
+    workflow, installation_material, ec_issuing_ca
+):
+    boundary, opnsense, arguments = workflow
+    ca_key, ca = ec_issuing_ca
+    arguments.update(
+        trusted_ca_data=public_pem(ca),
+        issued_signature_oid="1.2.840.10045.4.3.2",
+    )
+    leaf = _ec_issued_leaf(installation_material, ca_key, ca, hashes.SHA256())
+    opnsense.get_certificate.side_effect = lambda uuid: public_pem(leaf)
+    result = run_to_installation(**arguments)
+    assert result.plan.issued.signature_hash_algorithm == "sha256"
+    assert result.plan.issued.signature_algorithm_oid == "1.2.840.10045.4.3.2"
+    assert "sign" in boundary.events
+    opnsense.sign_csr.assert_called_once()
+
+
+def test_direct_issuance_rejects_ec_ca_with_rsa_leaf_signature_oid_before_any_io(
+    workflow, ec_issuing_ca
+):
+    boundary, opnsense, arguments = workflow
+    _, ca = ec_issuing_ca
+    arguments.update(
+        trusted_ca_data=public_pem(ca),
+        issued_signature_oid="1.2.840.113549.1.1.11",
+    )
+    with pytest.raises(RenewalStageError, match="configuration validation"):
+        run_to_installation(**arguments)
+    assert boundary.events == []
+    assert opnsense.mock_calls == []

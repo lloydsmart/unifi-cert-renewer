@@ -8,9 +8,10 @@ fixed, permission-controlled key-owner-local Unix-socket adapter.
 """
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from certificate import validate_installation_ca
+from certificate import validate_issued_signature_policy
 from opnsense_client import OPNsenseClient
 from unifi_client import (
     CertificateImportPlan,
@@ -21,6 +22,10 @@ from unifi_client import (
     prepare_certificate_import,
     validate_requested_csr,
 )
+
+
+def _current_time() -> datetime:
+    return datetime.now(UTC)
 
 
 class RenewalStageError(ValueError):
@@ -51,9 +56,11 @@ def run_to_installation(
     trusted_ca_data: bytes,
     ca_description: str,
     certificate_description: str,
+    issued_signature_oid: str,
     lifetime_days: int = 30,
     digest: str = "sha384",
     install: bool = False,
+    minimum_remaining_days: int | None = None,
 ) -> InstallationStageResult:
     """Inspect, issue, optionally install, verify live TLS, and finalise.
 
@@ -66,13 +73,16 @@ def run_to_installation(
     try:
         if type(install) is not bool:
             raise ValueError("install must be a boolean")
-        if (
-            type(lifetime_days) is not int
-            or not 1 <= lifetime_days <= 397
-            or digest not in {"sha256", "sha384", "sha512"}
-        ):
+        if type(lifetime_days) is not int or not 1 <= lifetime_days <= 397:
             raise ValueError("invalid signing policy")
-        ca_pem = validate_installation_ca(trusted_ca_data)
+        if minimum_remaining_days is not None and (
+            type(minimum_remaining_days) is not int
+            or not 1 <= minimum_remaining_days <= 397
+        ):
+            raise ValueError("invalid minimum remaining lifetime")
+        ca_pem = validate_issued_signature_policy(
+            trusted_ca_data, digest, issued_signature_oid
+        )
         stage = "current UniFi inspection"
         before = unifi.inspect_current(policy)
         stage = "CSR generation and validation"
@@ -93,10 +103,25 @@ def run_to_installation(
         stage = "issued public certificate retrieval"
         issued = opnsense.get_certificate(certificate_uuid)
         stage = "issued certificate and installation validation"
+        validation_time = _current_time()
         request = CertificateImportRequest(
-            before, policy, csr_pem, issued, ca_pem, lifetime_days
+            before,
+            policy,
+            csr_pem,
+            issued,
+            ca_pem,
+            lifetime_days,
+            digest,
+            issued_signature_oid,
+            validation_time,
         )
         plan = prepare_certificate_import(request)
+        if (
+            minimum_remaining_days is not None
+            and plan.issued.not_valid_after
+            <= validation_time + timedelta(days=minimum_remaining_days)
+        ):
+            raise ValueError("issued certificate remains in renewal window")
         if not install:
             return InstallationStageResult("prepared", request, plan, None)
         stage = "UniFi installation or verification; keystore may have changed"

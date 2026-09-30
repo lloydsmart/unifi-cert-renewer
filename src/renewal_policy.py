@@ -10,11 +10,10 @@ import re
 import stat
 from dataclasses import dataclass
 
-from cryptography import x509
-from cryptography.exceptions import UnsupportedAlgorithm
-
-from certificate import validate_installation_ca
-from public_key import UnsupportedPublicKeyError, public_key_algorithm_and_size
+from certificate import (
+    IssuedCertificateValidationError,
+    validate_issued_signature_policy,
+)
 from unifi_client import CertificatePolicy, build_unifi_csr_command
 from unifi_tls import (
     LiveTLSEndpoint,
@@ -27,18 +26,6 @@ POLICY_NAME = "policy.json"
 MAX_POLICY_BYTES = 64 * 1024
 MAX_VERIFICATION_SECONDS = 120
 SCHEMA_VERSION = 2
-_SIGNATURE_OIDS = {
-    "RSA": {
-        "sha256": "1.2.840.113549.1.1.11",
-        "sha384": "1.2.840.113549.1.1.12",
-        "sha512": "1.2.840.113549.1.1.13",
-    },
-    "EC": {
-        "sha256": "1.2.840.10045.4.3.2",
-        "sha384": "1.2.840.10045.4.3.3",
-        "sha512": "1.2.840.10045.4.3.4",
-    },
-}
 _SPKI_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
 
 
@@ -128,24 +115,18 @@ def parse_policy(data: bytes) -> RenewalPolicy:
             raise PolicyError("certificate identity requires a SAN")
         if not isinstance(value["issuing_ca_pem"], str):
             raise PolicyError("invalid issuing CA")
-        ca_pem = validate_installation_ca(value["issuing_ca_pem"].encode("ascii"))
         try:
-            ca_public_key_algorithm, _ = public_key_algorithm_and_size(
-                x509.load_pem_x509_certificate(ca_pem).public_key()
+            ca_pem = validate_issued_signature_policy(
+                value["issuing_ca_pem"].encode("ascii"),
+                value["signing_digest"],
+                value["issued_signature_oid"],
             )
-        except (UnsupportedPublicKeyError, UnsupportedAlgorithm):
-            raise PolicyError("unsupported issuing CA public key") from None
-        signature_oids = _SIGNATURE_OIDS.get(ca_public_key_algorithm)
-        if signature_oids is None:
-            raise PolicyError("unsupported issuing CA public key")
+        except IssuedCertificateValidationError as error:
+            raise PolicyError(str(error)) from None
         lifetime = value["lifetime_days"]
         if type(lifetime) is not int or not 1 <= lifetime <= 397:
             raise PolicyError("invalid certificate lifetime policy")
         digest = value["signing_digest"]
-        if not isinstance(digest, str) or digest not in signature_oids:
-            raise PolicyError("invalid signing digest policy")
-        if value["issued_signature_oid"] != signature_oids[digest]:
-            raise PolicyError("invalid issued signature policy")
         if value["csr_signature_algorithm"] != "SHA384withRSA":
             raise PolicyError("invalid CSR signature policy")
         description = value["issuing_ca_description"]

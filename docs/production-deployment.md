@@ -173,11 +173,11 @@ Start from
 [`renewer-config.example.json`](../deployment/renewer/renewer-config.example.json),
 replace every example identity and fingerprint, and keep its fields except that
 `renew_before_days` may be omitted for compatibility, in which case it defaults
-to 30. The renewal window is an integer from 1 through 397 days and is
-intentionally independent of `lifetime_days`; configuration validation does not
-couple the values. If `renew_before_days` is greater than or equal to
-`lifetime_days`, a newly issued certificate will already be inside the renewal
-window, so every scheduled check can renew it. `live_tls.address` must be a
+to 30. The renewal window is an integer from 1 through 397 days. Automatic
+`renew` requires it to be strictly less than `lifetime_days` before inspection,
+and rejects an issued certificate unless its expiry is strictly later than the
+post-retrieval validation time plus the renewal window. Explicit and read-only
+modes remain available when the threshold is at or above the lifetime. `live_tls.address` must be a
 numeric address and must remain stable across UniFi container recreation;
 `server_hostname` is the independently verified DNS or IP identity. An
 ephemeral Docker bridge address is not a safe production configuration because

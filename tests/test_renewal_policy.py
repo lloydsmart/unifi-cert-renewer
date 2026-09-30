@@ -72,7 +72,7 @@ def _self_signed_ca(key, now, signature_hash):
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - timedelta(days=1))
-        .not_valid_after(now + timedelta(days=365))
+        .not_valid_after(now + timedelta(days=730))
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), True)
         .add_extension(
             x509.KeyUsage(False, False, False, False, False, True, True, False, False),
@@ -215,6 +215,10 @@ def _ec_issued_leaf(material, ca_key, ca, signature_hash):
         .not_valid_after(material.now + timedelta(days=30, minutes=-1))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False)
+        .add_extension(
+            x509.KeyUsage(True, False, True, False, False, False, False, False, False),
+            True,
+        )
         .add_extension(x509.SubjectAlternativeName([x509.DNSName("unifi.test")]), False)
         .add_extension(
             x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
@@ -259,6 +263,13 @@ def test_rsa_unifi_csr_and_ec_ca_leaf_pass_v2_executor_policy_validation(
     plan = prepare_certificate_import(decoded)
     assert decoded.policy == material.request.policy
     assert decoded.trusted_ca_data == policy.ca_pem
+    assert decoded.expected_signature_hash == policy.signing_digest
+    assert decoded.expected_signature_oid == policy.issued_signature_oid
+    assert set(service._encode_import_request(public_request)) == {
+        "before",
+        "csr_pem",
+        "issued_certificate",
+    }
     assert plan.issued.signature_hash_algorithm == "sha256"
     assert plan.issued.signature_algorithm_oid == policy.issued_signature_oid
 
@@ -284,9 +295,8 @@ def test_trusted_ec_sha384_leaf_rejected_by_sha256_executor_policy(
         issued_certificate=public_pem(leaf),
         trusted_ca_data=policy.ca_pem,
     )
-    validated = prepare_certificate_import(request)
-    assert validated.issued.signature_algorithm_oid == "1.2.840.10045.4.3.3"
-    assert validated.issued.signature_hash_algorithm == "sha384"
+    with pytest.raises(ValueError, match="signature differs"):
+        prepare_certificate_import(request)
 
     with pytest.raises(ValueError):
         service._decode_import_request(service._encode_import_request(request), policy)
@@ -428,3 +438,118 @@ def test_policy_verification_deadline_fits_socket_response_budget():
     from unifi_executor_client import SOCKET_TIMEOUT_SECONDS
 
     assert renewal_policy.MAX_VERIFICATION_SECONDS < SOCKET_TIMEOUT_SECONDS
+
+
+def test_production_shaped_397_day_leaf_passes_common_and_executor_policy(
+    rsa_4096_unifi_material, ec_issuing_ca
+):
+    material = rsa_4096_unifi_material
+    ca_key, ca = ec_issuing_ca
+    not_before = material.now
+    leaf = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi.test")])
+        )
+        .issuer_name(ca.subject)
+        .public_key(material.key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_before)
+        .not_valid_after(not_before + timedelta(days=397))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
+        .add_extension(
+            x509.ExtendedKeyUsage(
+                [
+                    ExtendedKeyUsageOID.SERVER_AUTH,
+                    x509.ObjectIdentifier("1.3.6.1.5.5.8.2.2"),
+                ]
+            ),
+            False,
+        )
+        .add_extension(
+            x509.KeyUsage(True, False, True, False, False, False, False, False, False),
+            True,
+        )
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("unifi.test")]), False)
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(material.key.public_key()), False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            False,
+        )
+        .add_extension(
+            x509.UnrecognizedExtension(
+                x509.ObjectIdentifier("2.16.840.1.113730.1.1"), b"\x03\x02\x00\x40"
+            ),
+            False,
+        )
+        .add_extension(
+            x509.UnrecognizedExtension(
+                x509.ObjectIdentifier("2.16.840.1.113730.1.13"), b"\x16\x06stock!"
+            ),
+            False,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    value = _ec_sha256_policy(material, ca)
+    value["lifetime_days"] = 397
+    policy = renewal_policy.parse_policy(json.dumps(value).encode())
+    request = replace(
+        material.request,
+        issued_certificate=public_pem(leaf),
+        trusted_ca_data=policy.ca_pem,
+        lifetime_days=397,
+        expected_signature_hash=policy.signing_digest,
+        expected_signature_oid=policy.issued_signature_oid,
+        freshness_reference_time=material.now,
+    )
+    direct = prepare_certificate_import(request)
+    decoded = service._decode_import_request(
+        service._encode_import_request(request), policy
+    )
+    assert prepare_certificate_import(decoded).issued == direct.issued
+    assert direct.issued.public_key_size == 4096
+    assert direct.issued.signature_algorithm_oid == "1.2.840.10045.4.3.2"
+    assert direct.issued.not_valid_after - direct.issued.not_valid_before == timedelta(
+        days=397
+    )
+
+
+@pytest.mark.parametrize("hash_algorithm", [hashes.SHA384(), hashes.SHA512()])
+def test_worker_and_executor_reject_other_sha2_issued_digest(
+    rsa_4096_unifi_material, ec_issuing_ca, hash_algorithm
+):
+    material = rsa_4096_unifi_material
+    ca_key, ca = ec_issuing_ca
+    policy = renewal_policy.parse_policy(
+        json.dumps(_ec_sha256_policy(material, ca)).encode()
+    )
+    leaf = _ec_issued_leaf(material, ca_key, ca, hash_algorithm)
+    request = replace(
+        material.request,
+        issued_certificate=public_pem(leaf),
+        trusted_ca_data=policy.ca_pem,
+        expected_signature_hash=policy.signing_digest,
+        expected_signature_oid=policy.issued_signature_oid,
+    )
+    with pytest.raises(ValueError, match="signature differs"):
+        prepare_certificate_import(request)
+    with pytest.raises(ValueError):
+        service._decode_import_request(service._encode_import_request(request), policy)
+
+
+def test_worker_cannot_override_signature_policy_on_protocol_v2(
+    installation_material,
+):
+    policy = policy_for(installation_material)
+    altered = replace(
+        installation_material.request,
+        expected_signature_hash="sha512",
+        expected_signature_oid="1.2.840.113549.1.1.13",
+    )
+    wire = service._encode_import_request(altered)
+    assert set(wire) == {"before", "csr_pem", "issued_certificate"}
+    decoded = service._decode_import_request(wire, policy)
+    assert decoded.expected_signature_hash == policy.signing_digest
+    assert decoded.expected_signature_oid == policy.issued_signature_oid

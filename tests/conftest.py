@@ -82,6 +82,12 @@ class InstallationMaterial:
                 x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False
             )
             .add_extension(
+                x509.KeyUsage(
+                    not ca, False, not ca, False, False, ca, ca, False, False
+                ),
+                True,
+            )
+            .add_extension(
                 x509.SubjectAlternativeName(
                     sans if sans is not None else [x509.DNSName("unifi.test")]
                 ),
@@ -144,6 +150,9 @@ def installation_material():
         public_pem(material.issue()),
         public_pem(ca),
         30,
+        "sha256",
+        "1.2.840.113549.1.1.11",
+        now,
     )
     return material
 

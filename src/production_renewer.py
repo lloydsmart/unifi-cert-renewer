@@ -323,6 +323,8 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
         raise ProductionRunError(
             "Renewer stopped during configuration validation"
         ) from None
+    if mode == "renew" and config.renew_before_days >= config.authority.lifetime_days:
+        raise ProductionRunError("Renewer stopped during configuration validation")
     unifi = build_production_unifi_client(config.authority)
     try:
         if mode == "inspect":
@@ -375,7 +377,11 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
             certificate_description=config.certificate_description,
             lifetime_days=config.authority.lifetime_days,
             digest=config.authority.signing_digest,
+            issued_signature_oid=config.authority.issued_signature_oid,
             install=install,
+            minimum_remaining_days=(
+                config.renew_before_days if mode == "renew" else None
+            ),
         )
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None

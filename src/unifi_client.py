@@ -118,6 +118,9 @@ class CertificateImportRequest:
     issued_certificate: bytes
     trusted_ca_data: bytes
     lifetime_days: int
+    expected_signature_hash: str
+    expected_signature_oid: str
+    freshness_reference_time: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +251,9 @@ def prepare_certificate_import(
         csr_info,
         trusted_ca_data=request.trusted_ca_data,
         lifetime_days=request.lifetime_days,
+        expected_signature_hash=request.expected_signature_hash,
+        expected_signature_oid=request.expected_signature_oid,
+        freshness_reference_time=request.freshness_reference_time,
         now=now,
     )
     return CertificateImportPlan(reply, chain, issued)

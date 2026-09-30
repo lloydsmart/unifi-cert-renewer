@@ -321,12 +321,11 @@ omitted.
 - `trusted_ca_name`: filename of the public issuing CA used for issued-certificate
   and live UniFi TLS verification.
 - `lifetime_days`: requested lifetime from 1 through 397 days.
-- `renew_before_days`: independent renewal threshold from 1 through 397 days.
-  The default is 30. It is intentionally independent of `lifetime_days`, and
-  configuration validation does not couple the two values. If
-  `renew_before_days` is greater than or equal to `lifetime_days`, a newly
-  issued certificate will already be within the renewal window, so every
-  scheduled check can renew it.
+- `renew_before_days`: renewal threshold from 1 through 397 days. The default
+  is 30. Automatic `renew` requires it to be strictly less than `lifetime_days`
+  and rejects an issued certificate whose remaining lifetime is equal to or
+  shorter than this threshold. `inspect`, `csr`, `prepare`, and `install` remain
+  available when the threshold is at or above the requested lifetime.
 - `digest`: signing digest: `sha256`, `sha384`, or `sha512`.
 - `live_tls.address`: stable, operator-controlled numeric IPv4 or IPv6 address
   used for the actual connection.

@@ -39,6 +39,18 @@ _PEM_TRAILING_WHITESPACE = b" \t\r\n\v\f"
 _PEM_BASE64_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 _ALLOWED_SIGNATURE_HASHES = frozenset({"sha256", "sha384", "sha512"})
 _SUPPORTED_RSA_KEY_SIZES = frozenset({2048, 3072, 4096})
+_ISSUED_SIGNATURE_OIDS = {
+    "RSA": {
+        "sha256": "1.2.840.113549.1.1.11",
+        "sha384": "1.2.840.113549.1.1.12",
+        "sha512": "1.2.840.113549.1.1.13",
+    },
+    "EC": {
+        "sha256": "1.2.840.10045.4.3.2",
+        "sha384": "1.2.840.10045.4.3.3",
+        "sha512": "1.2.840.10045.4.3.4",
+    },
+}
 _ALLOWED_SERVER_EKU_PROFILES = frozenset(
     {
         frozenset({ExtendedKeyUsageOID.SERVER_AUTH}),
@@ -109,12 +121,48 @@ def validate_installation_ca(
     return ca.public_bytes(serialization.Encoding.PEM)
 
 
+def validate_issued_signature_policy(
+    trusted_ca_data: bytes,
+    signing_digest: str,
+    issued_signature_oid: str,
+    *,
+    now: datetime | None = None,
+) -> bytes:
+    """Return canonical issuing-CA PEM only for its exact leaf signing policy.
+
+    The CA's own self-signature digest does not select the issued-leaf digest.
+    """
+
+    ca_pem = validate_installation_ca(trusted_ca_data, now=now)
+    try:
+        ca = x509.load_pem_x509_certificate(ca_pem)
+        ca_algorithm, _ = public_key_algorithm_and_size(ca.public_key())
+    except (ValueError, UnsupportedAlgorithm, UnsupportedPublicKeyError):
+        raise IssuedCertificateValidationError(
+            "unsupported issuing CA public key"
+        ) from None
+    signature_oids = _ISSUED_SIGNATURE_OIDS.get(ca_algorithm)
+    if signature_oids is None:
+        raise IssuedCertificateValidationError("unsupported issuing CA public key")
+    if not isinstance(signing_digest, str) or signing_digest not in signature_oids:
+        raise IssuedCertificateValidationError("invalid signing digest policy")
+    if (
+        not isinstance(issued_signature_oid, str)
+        or issued_signature_oid != signature_oids[signing_digest]
+    ):
+        raise IssuedCertificateValidationError("invalid issued signature policy")
+    return ca_pem
+
+
 def build_validated_certificate_reply(
     certificate_data: bytes,
     csr_info: CSRInfo,
     *,
     trusted_ca_data: bytes,
     lifetime_days: int,
+    expected_signature_hash: str,
+    expected_signature_oid: str,
+    freshness_reference_time: datetime,
     now: datetime | None = None,
 ) -> tuple[CertificateInfo, tuple[bytes, bytes], bytes]:
     """Validate and encode a leaf-first X.509 PEM sequence for keytool stdin.
@@ -129,6 +177,9 @@ def build_validated_certificate_reply(
         csr_info,
         trusted_ca_data=ca_pem,
         lifetime_days=lifetime_days,
+        expected_signature_hash=expected_signature_hash,
+        expected_signature_oid=expected_signature_oid,
+        freshness_reference_time=freshness_reference_time,
         now=now,
     )
     leaf = _load_one_certificate(
@@ -213,21 +264,31 @@ def validate_issued_certificate(
     *,
     trusted_ca_data: bytes,
     lifetime_days: int,
+    expected_signature_hash: str,
+    expected_signature_oid: str,
+    freshness_reference_time: datetime,
     now: datetime | None = None,
     clock_skew: timedelta = DEFAULT_CLOCK_SKEW,
 ) -> CertificateInfo:
     """Validate one issued server leaf against its CSR and configured CA.
 
-    Basic Constraints and serverAuth EKU are required. Key Usage is permitted
-    to be absent under RFC 5280; when present, it must allow digital signatures
-    and must not allow certificate or CRL signing. RSA key encipherment is
-    optional.
+    Enforce requested issuance, exact server-leaf extensions, and CA trust.
     """
 
     if not isinstance(csr_info, CSRInfo):
         raise TypeError("CSR information must be CSRInfo")
     _validate_lifetime_days(lifetime_days)
+    if (
+        not isinstance(expected_signature_hash, str)
+        or expected_signature_hash not in _ALLOWED_SIGNATURE_HASHES
+        or not isinstance(expected_signature_oid, str)
+        or not expected_signature_oid
+    ):
+        raise ValueError("invalid issued certificate signature policy")
     validation_time = _validation_time(now)
+    if freshness_reference_time is None:
+        raise ValueError("certificate freshness reference is required")
+    freshness_reference = _validation_time(freshness_reference_time)
     if not isinstance(clock_skew, timedelta) or clock_skew < timedelta(0):
         raise ValueError("certificate clock skew must be a non-negative duration")
 
@@ -259,9 +320,23 @@ def validate_issued_certificate(
         )
     _validate_exact_sans(certificate, csr_info)
     _validate_leaf_extensions(certificate)
-    _validate_validity(certificate, lifetime_days, validation_time, clock_skew)
+    _validate_validity(
+        certificate, lifetime_days, validation_time, freshness_reference, clock_skew
+    )
     _validate_signature_hash(certificate)
-    _verify_ca_trust(certificate, trusted_ca_data, csr_info, validation_time)
+    if (
+        info.signature_hash_algorithm != expected_signature_hash
+        or info.signature_algorithm_oid != expected_signature_oid
+    ):
+        raise IssuedCertificateValidationError(
+            "issued certificate signature differs from requested policy"
+        )
+    _verify_ca_trust(
+        certificate,
+        trusted_ca_data,
+        csr_info,
+        validation_time,
+    )
     return info
 
 
@@ -445,22 +520,27 @@ def _validate_leaf_extensions(certificate: x509.Certificate) -> None:
         certificate, x509.ExtendedKeyUsage, "Extended Key Usage"
     )
     assert isinstance(extended_key_usage, x509.ExtendedKeyUsage)
-    if frozenset(extended_key_usage) not in _ALLOWED_SERVER_EKU_PROFILES:
+    if (
+        len(extended_key_usage) != len(frozenset(extended_key_usage))
+        or frozenset(extended_key_usage) not in _ALLOWED_SERVER_EKU_PROFILES
+    ):
         raise IssuedCertificateValidationError(
             "issued certificate Extended Key Usage profile is not accepted"
         )
 
-    try:
-        key_usage = certificate.extensions.get_extension_for_class(x509.KeyUsage).value
-    except x509.ExtensionNotFound:
-        return
-    if key_usage.key_cert_sign or key_usage.crl_sign:
+    key_usage = _require_extension(certificate, x509.KeyUsage, "Key Usage")
+    assert isinstance(key_usage, x509.KeyUsage)
+    if not (
+        key_usage.digital_signature
+        and key_usage.key_encipherment
+        and not key_usage.content_commitment
+        and not key_usage.data_encipherment
+        and not key_usage.key_agreement
+        and not key_usage.key_cert_sign
+        and not key_usage.crl_sign
+    ):
         raise IssuedCertificateValidationError(
-            "issued certificate Key Usage permits CA signing"
-        )
-    if not key_usage.digital_signature:
-        raise IssuedCertificateValidationError(
-            "issued certificate Key Usage must permit digitalSignature"
+            "issued certificate Key Usage profile is not accepted"
         )
 
 
@@ -479,9 +559,13 @@ def _validate_lifetime_days(lifetime_days: int) -> None:
         )
 
 
+def _current_time() -> datetime:
+    return datetime.now(UTC)
+
+
 def _validation_time(now: datetime | None) -> datetime:
     if now is None:
-        return datetime.now(UTC)
+        return _current_time()
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise ValueError("certificate validation time must be timezone-aware")
     return now
@@ -491,6 +575,7 @@ def _validate_validity(
     certificate: x509.Certificate,
     lifetime_days: int,
     now: datetime,
+    freshness_reference: datetime,
     clock_skew: timedelta,
 ) -> None:
     not_before = _not_valid_before_utc(certificate)
@@ -499,19 +584,22 @@ def _validate_validity(
         raise IssuedCertificateValidationError(
             "issued certificate validity period is invalid"
         )
-    if not_before > now + clock_skew:
+    if not_before > now:
         raise IssuedCertificateValidationError("issued certificate is not yet valid")
     if not_after <= now:
         raise IssuedCertificateValidationError("issued certificate has expired")
+    if not_before < freshness_reference - clock_skew:
+        raise IssuedCertificateValidationError(
+            "issued certificate is too far backdated"
+        )
+    if not_before > freshness_reference:
+        raise IssuedCertificateValidationError(
+            "issued certificate postdates freshness reference"
+        )
 
     actual_lifetime = not_after - not_before
     expected_lifetime = timedelta(days=lifetime_days)
-    tolerance = timedelta(days=1)
-    if (
-        not expected_lifetime - tolerance
-        <= actual_lifetime
-        <= expected_lifetime + tolerance
-    ):
+    if actual_lifetime != expected_lifetime:
         raise IssuedCertificateValidationError(
             "issued certificate validity period does not match the requested lifetime"
         )
