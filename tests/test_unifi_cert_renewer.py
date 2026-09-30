@@ -6,7 +6,10 @@ from unittest.mock import Mock
 import pytest
 from conftest import public_pem
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from test_certificate_installation import FakeBoundary
+from test_renewal_policy import _ec_issued_leaf
+from test_renewal_policy import ec_issuing_ca as ec_issuing_ca
 
 import unifi_cert_renewer
 from opnsense_client import CA_LIST_PATH, CERT_ADD_PATH, OPNsenseClient
@@ -376,3 +379,66 @@ def test_worker_captures_fresh_time_after_certificate_retrieval(
     assert result.state == "prepared"
     assert result.request.freshness_reference_time == not_before
     assert result.plan.issued.not_valid_before == not_before
+
+
+@pytest.mark.parametrize(
+    ("digest", "issued_signature_oid"),
+    [
+        ("sha256", ""),
+        ("sha256", "not-an-oid"),
+        ("sha256", "1.2.840.10045.4.3.2"),
+        ("sha384", "1.2.840.113549.1.1.11"),
+        ("sha512", "1.2.840.113549.1.1.12"),
+    ],
+)
+def test_direct_issuance_rejects_invalid_rsa_signature_policy_before_any_io(
+    workflow, digest, issued_signature_oid
+):
+    boundary, opnsense, arguments = workflow
+    arguments.update(digest=digest, issued_signature_oid=issued_signature_oid)
+    with pytest.raises(RenewalStageError, match="configuration validation"):
+        run_to_installation(**arguments)
+    assert boundary.events == []
+    assert opnsense.mock_calls == []
+
+
+def test_direct_issuance_accepts_exact_rsa_sha256_signature_policy(workflow):
+    boundary, opnsense, arguments = workflow
+    result = run_to_installation(**arguments)
+    assert result.plan.issued.signature_hash_algorithm == "sha256"
+    assert result.plan.issued.signature_algorithm_oid == "1.2.840.113549.1.1.11"
+    assert "sign" in boundary.events
+    opnsense.sign_csr.assert_called_once()
+
+
+def test_direct_issuance_accepts_exact_ec_sha256_signature_policy(
+    workflow, installation_material, ec_issuing_ca
+):
+    boundary, opnsense, arguments = workflow
+    ca_key, ca = ec_issuing_ca
+    arguments.update(
+        trusted_ca_data=public_pem(ca),
+        issued_signature_oid="1.2.840.10045.4.3.2",
+    )
+    leaf = _ec_issued_leaf(installation_material, ca_key, ca, hashes.SHA256())
+    opnsense.get_certificate.side_effect = lambda uuid: public_pem(leaf)
+    result = run_to_installation(**arguments)
+    assert result.plan.issued.signature_hash_algorithm == "sha256"
+    assert result.plan.issued.signature_algorithm_oid == "1.2.840.10045.4.3.2"
+    assert "sign" in boundary.events
+    opnsense.sign_csr.assert_called_once()
+
+
+def test_direct_issuance_rejects_ec_ca_with_rsa_leaf_signature_oid_before_any_io(
+    workflow, ec_issuing_ca
+):
+    boundary, opnsense, arguments = workflow
+    _, ca = ec_issuing_ca
+    arguments.update(
+        trusted_ca_data=public_pem(ca),
+        issued_signature_oid="1.2.840.113549.1.1.11",
+    )
+    with pytest.raises(RenewalStageError, match="configuration validation"):
+        run_to_installation(**arguments)
+    assert boundary.events == []
+    assert opnsense.mock_calls == []

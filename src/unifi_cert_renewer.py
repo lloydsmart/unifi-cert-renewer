@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from certificate import validate_installation_ca
+from certificate import validate_issued_signature_policy
 from opnsense_client import OPNsenseClient
 from unifi_client import (
     CertificateImportPlan,
@@ -73,18 +73,16 @@ def run_to_installation(
     try:
         if type(install) is not bool:
             raise ValueError("install must be a boolean")
-        if (
-            type(lifetime_days) is not int
-            or not 1 <= lifetime_days <= 397
-            or digest not in {"sha256", "sha384", "sha512"}
-        ):
+        if type(lifetime_days) is not int or not 1 <= lifetime_days <= 397:
             raise ValueError("invalid signing policy")
         if minimum_remaining_days is not None and (
             type(minimum_remaining_days) is not int
             or not 1 <= minimum_remaining_days <= 397
         ):
             raise ValueError("invalid minimum remaining lifetime")
-        ca_pem = validate_installation_ca(trusted_ca_data)
+        ca_pem = validate_issued_signature_policy(
+            trusted_ca_data, digest, issued_signature_oid
+        )
         stage = "current UniFi inspection"
         before = unifi.inspect_current(policy)
         stage = "CSR generation and validation"

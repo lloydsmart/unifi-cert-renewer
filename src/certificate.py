@@ -39,6 +39,18 @@ _PEM_TRAILING_WHITESPACE = b" \t\r\n\v\f"
 _PEM_BASE64_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 _ALLOWED_SIGNATURE_HASHES = frozenset({"sha256", "sha384", "sha512"})
 _SUPPORTED_RSA_KEY_SIZES = frozenset({2048, 3072, 4096})
+_ISSUED_SIGNATURE_OIDS = {
+    "RSA": {
+        "sha256": "1.2.840.113549.1.1.11",
+        "sha384": "1.2.840.113549.1.1.12",
+        "sha512": "1.2.840.113549.1.1.13",
+    },
+    "EC": {
+        "sha256": "1.2.840.10045.4.3.2",
+        "sha384": "1.2.840.10045.4.3.3",
+        "sha512": "1.2.840.10045.4.3.4",
+    },
+}
 _ALLOWED_SERVER_EKU_PROFILES = frozenset(
     {
         frozenset({ExtendedKeyUsageOID.SERVER_AUTH}),
@@ -107,6 +119,39 @@ def validate_installation_ca(
         raise IssuedCertificateValidationError("installation CA is not currently valid")
     _validate_signature_hash(ca)
     return ca.public_bytes(serialization.Encoding.PEM)
+
+
+def validate_issued_signature_policy(
+    trusted_ca_data: bytes,
+    signing_digest: str,
+    issued_signature_oid: str,
+    *,
+    now: datetime | None = None,
+) -> bytes:
+    """Return canonical issuing-CA PEM only for its exact leaf signing policy.
+
+    The CA's own self-signature digest does not select the issued-leaf digest.
+    """
+
+    ca_pem = validate_installation_ca(trusted_ca_data, now=now)
+    try:
+        ca = x509.load_pem_x509_certificate(ca_pem)
+        ca_algorithm, _ = public_key_algorithm_and_size(ca.public_key())
+    except (ValueError, UnsupportedAlgorithm, UnsupportedPublicKeyError):
+        raise IssuedCertificateValidationError(
+            "unsupported issuing CA public key"
+        ) from None
+    signature_oids = _ISSUED_SIGNATURE_OIDS.get(ca_algorithm)
+    if signature_oids is None:
+        raise IssuedCertificateValidationError("unsupported issuing CA public key")
+    if not isinstance(signing_digest, str) or signing_digest not in signature_oids:
+        raise IssuedCertificateValidationError("invalid signing digest policy")
+    if (
+        not isinstance(issued_signature_oid, str)
+        or issued_signature_oid != signature_oids[signing_digest]
+    ):
+        raise IssuedCertificateValidationError("invalid issued signature policy")
+    return ca_pem
 
 
 def build_validated_certificate_reply(
