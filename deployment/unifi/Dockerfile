@@ -5,6 +5,13 @@ FROM ${UNIFI_IMAGE}
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates python3 python3-venv \
+    && apt-get install --no-install-recommends --only-upgrade -y \
+        libssl3t64 openssl openssl-provider-legacy \
+    && for package in libssl3t64 openssl openssl-provider-legacy; do \
+        dpkg --compare-versions \
+            "$(dpkg-query -W -f='${Version}' "$package")" \
+            ge 3.5.5-1ubuntu3.6 || exit 1; \
+       done \
     && python3 -m venv /opt/unifi-cert-renewer/venv \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
