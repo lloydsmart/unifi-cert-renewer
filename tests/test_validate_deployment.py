@@ -31,6 +31,11 @@ def valid_compose() -> dict[str, object]:
                     },
                     {
                         "type": "bind",
+                        "source": "/run/unifi-cert-renewer-lifecycle",
+                        "target": "/run/unifi-cert-renewer-lifecycle",
+                    },
+                    {
+                        "type": "bind",
                         "source": validator.EXPECTED_SECRETS_DIRECTORY,
                         "target": "/run/secrets",
                         "read_only": True,
@@ -112,6 +117,38 @@ def test_compose_rejects_additional_or_sensitive_mount() -> None:
 def test_compose_rejects_writable_mount() -> None:
     document = valid_compose()
     document["services"]["renewer"]["volumes"][0]["read_only"] = False  # type: ignore[index]
+
+    with pytest.raises(validator.DeploymentValidationError):
+        validator.validate_compose(document)
+
+
+def test_compose_accepts_explicit_writable_lifecycle_mount() -> None:
+    document = valid_compose()
+    document["services"]["renewer"]["volumes"][1]["read_only"] = False  # type: ignore[index]
+
+    validator.validate_compose(document)
+
+
+def test_compose_rejects_read_only_lifecycle_mount() -> None:
+    document = valid_compose()
+    document["services"]["renewer"]["volumes"][1]["read_only"] = True  # type: ignore[index]
+
+    with pytest.raises(validator.DeploymentValidationError):
+        validator.validate_compose(document)
+
+
+def test_compose_rejects_omitted_read_only_on_required_mount() -> None:
+    document = valid_compose()
+    del document["services"]["renewer"]["volumes"][0]["read_only"]  # type: ignore[index]
+
+    with pytest.raises(validator.DeploymentValidationError):
+        validator.validate_compose(document)
+
+
+@pytest.mark.parametrize("value", [None, 0, "false"])
+def test_compose_rejects_nonboolean_read_only(value: object) -> None:
+    document = valid_compose()
+    document["services"]["renewer"]["volumes"][1]["read_only"] = value  # type: ignore[index]
 
     with pytest.raises(validator.DeploymentValidationError):
         validator.validate_compose(document)

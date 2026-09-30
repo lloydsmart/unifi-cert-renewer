@@ -260,8 +260,8 @@ def test_interrupted_or_ambiguous_import_never_returns_a_result(
         return state
 
     @contextmanager
-    def fail_context_exit():
-        with exclusive():
+    def fail_context_exit(expected_before):
+        with exclusive(expected_before):
             yield
             if failure_point == "context-exit":
                 raise failure_type("synthetic-sensitive-diagnostic")

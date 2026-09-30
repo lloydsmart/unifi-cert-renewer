@@ -143,6 +143,12 @@ fail closed on this implementation; see
 [the quiescent upgrade gate](policy-and-verification-v2.md).
 No password, API credential, diagnostics or keystore bytes are included.
 
+For an install request, the executor compares the caller's expected public
+keystore state with a fresh collection while holding its transaction lock,
+before creating a journal or stopping Java. A stale worker is rejected without
+service disruption. The checks after shutdown and before import remain
+authoritative for changes during quiescence or staging.
+
 Each transition writes an exclusive temporary journal, fsyncs it, atomically
 replaces the journal and fsyncs the directory. Journal presence blocks new work.
 A replacement may be readable before its directory fsync has completed; recovery

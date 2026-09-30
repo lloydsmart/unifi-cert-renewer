@@ -34,7 +34,7 @@ class FakeBoundary:
         self.locked = False
 
     @contextmanager
-    def exclusive(self):
+    def exclusive(self, expected_before):
         self.events.append("lock")
         self.locked = True
         try:

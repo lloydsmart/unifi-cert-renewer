@@ -41,7 +41,7 @@ class FakeExecutor:
             raise UnifiOperationError(f"failure {self.private_marker}")
 
     @contextmanager
-    def exclusive(self):
+    def exclusive(self, expected_before):
         self.events.append("exclusive-enter")
         try:
             yield

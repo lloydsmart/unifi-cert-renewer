@@ -849,6 +849,17 @@ def test_service_failure_never_returns_success(platform, monkeypatch, point):
     assert p.events.count("import") == (1 if point == "start" else 0)
 
 
+def test_stale_worker_rejected_before_journal_or_service_stop(platform):
+    p = platform
+    stale = PublicKeystoreState(metadata(2), p.plan.certificate_chain_der)
+    stale_request = replace(p.request, before=stale)
+    with pytest.raises(UnifiOperationError):
+        UnifiClient(p.adapter).install_certificate(stale_request)
+    assert p.events == []
+    assert not (p.root / JOURNAL).exists()
+    assert p.service.up
+
+
 def test_stale_state_after_stop_is_rejected(platform, monkeypatch):
     p = platform
     original = executor._Service.stop
@@ -886,7 +897,7 @@ def test_dataclass_and_public_api_cannot_select_command_or_target(platform):
     p = platform
     assert not hasattr(p.plan, "argv")
     for value in (p.plan, p.plan.reply_pem, ("/bin/sh", "-c", "id")):
-        with pytest.raises(UnifiOperationError), p.adapter.exclusive():
+        with pytest.raises(UnifiOperationError), p.adapter.exclusive(p.request.before):
             p.adapter.import_certificate_reply(value, expected_before=p.request.before)
         assert p.adapter.recover() == "recovered_old"
     assert "import" not in p.events
