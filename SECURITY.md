@@ -678,8 +678,9 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-09-30 Lloyd Smart, as owner and reviewer, explicitly approved temporary
-risk acceptance for 26 inherited vendor-image findings: 19 HIGH and 7 CRITICAL.
+On 2026-09-30 Lloyd Smart, as owner and reviewer, approved 26 inherited
+vendor-image findings and subsequently approved two more Jackson findings. The
+current temporary acceptance covers 28 findings: 21 HIGH and 7 CRITICAL.
 The [exception registry](.security/container-exceptions.json) scopes each record
 to Linux amd64, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
@@ -689,10 +690,13 @@ identity, or introduced finding. The exceptions expire at **00:00 UTC on
 2026-10-05**; the scanner fails closed after expiry, with no automatic extension.
 
 The [30 September finding review](docs/vendor-finding-review-2026-09-30.md)
-records the fresh scan, the new Jackson finding `CVE-2026-68497`, and remaining
-applicability uncertainty. LinuxServer `ls148` was reviewed, but its UniFi JAR
-payload and all 26 HIGH/CRITICAL findings are unchanged, so it does not reduce
-this finding set. The earlier
+records the original 26-finding decision and a separate subsequent review of
+Jackson findings `CVE-2026-91776` and `CVE-2026-91777`. The former has positive
+UniFi name-based polymorphism/defaultImpl configuration evidence, but no
+demonstrated attacker-controlled route. The latter has no direct UniFi
+application annotation evidence, while indirect or runtime use remains
+unexcluded. LinuxServer `ls148` retains the same 146 UniFi JARs and the same
+current HIGH/CRITICAL identities, so it does not reduce this finding set. The earlier
 [26 September vendor-image review](docs/vendor-image-review-2026-09-26.md) and
 [17 September per-finding review](docs/vendor-finding-review-2026-09-17.md)
 remain historical evidence.
