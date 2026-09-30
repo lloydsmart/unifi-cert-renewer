@@ -702,6 +702,60 @@
       "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require attacker-controlled JSON string data to be bound by Jackson to javax.xml.datatype.Duration or XMLGregorianCalendar, potentially exhausting CPU or memory. Static review found the affected implementation but no direct UniFi application reference to those types and no concrete REST/API, inform, WebSocket, configuration-import, or persisted-data binding route. Dynamic binding, reflection, and runtime mapper configuration remain unexcluded.",
       "reason": "New inherited HIGH finding identified in the fresh 2026-09-30 qualification of the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. The finding is in bundled Jackson databind 2.21.2, JAR SHA-256 8c982f01f148d805f0aaac2339011244757e0df7c6ff8951f2fa3f433b8ed849. The ls148 image contains the byte-identical UniFi JAR payload and the same finding; no vendor-supported fixed bundle currently resolves it. No concrete UniFi exploit route was demonstrated, but reachability was not disproved. Acceptance is temporary and deliberately short.",
       "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported restricted exposure; malicious or compromised permitted clients and devices remain a risk. Do not independently replace the bundled Jackson JAR. Prefer a vendor-supported fixed image. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+    },
+    {
+      "identifier": "EX-UNIFI-20260930-027",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-91776",
+          "package_name": "com.fasterxml.jackson.core:jackson-databind",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+          "installed_version": "2.21.2"
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.18.11, 2.21.7, 2.22.3"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-30",
+      "expires_on": "2026-10-05",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "exposure": "If permitted input reaches the relevant name-based polymorphic model, repeated distinct attacker-influenced type IDs may be retained for the process lifetime, causing heap growth, availability pressure, or an out-of-memory failure. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. Authentication and reachability of the relevant input route remain unproved.",
+      "reason": "Short exact acceptance of an inherited vendor JAR finding while awaiting a supported fixed image. UniFi contains the advisory-relevant name-based-polymorphism/defaultImpl configuration shape, but no concrete attacker-controlled path to the affected model or long-lived deserializer was established. Dynamic and indirect use remain possible. Independent Jackson JAR replacement is unqualified.",
+      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction; do not broaden management, guest-portal, or device exposure. Monitor upstream fixes and service memory. Do not independently replace bundled Jackson JARs. Re-review on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+    },
+    {
+      "identifier": "EX-UNIFI-20260930-028",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-91777",
+          "package_name": "com.fasterxml.jackson.core:jackson-databind",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+          "installed_version": "2.21.2"
+        },
+        "severity": "HIGH",
+        "fixed_version": "2.21.7, 2.18.11, 2.22.3"
+      },
+      "owner": "Lloyd Smart",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-09-30",
+      "expires_on": "2026-10-05",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "exposure": "If attacker-influenced JSON reaches an identity-enabled collection or map, reverse-order unresolved object references may cause quadratic CPU work and exhaust request or worker capacity. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. No concrete affected UniFi input route was established.",
+      "reason": "Short exact acceptance of an inherited vendor JAR finding with unresolved UniFi reachability while awaiting a supported fixed image. Static review found no direct UniFi @JsonIdentityInfo reference, but runtime mix-ins, indirect framework use, and generated models were not excluded. Independent Jackson JAR replacement is unqualified.",
+      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction; do not broaden endpoint exposure. Prefer a vendor-supported fixed image. Do not independently replace bundled Jackson JARs. Re-review on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
     }
   ]
 }

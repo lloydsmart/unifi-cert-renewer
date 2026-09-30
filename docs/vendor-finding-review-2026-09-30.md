@@ -114,3 +114,51 @@ No exception was added for CVE-2026-84782. This remediation does not revise
 the owner's acceptance of the other 26 findings. If the patched derivative
 has no CVE-2026-84782 rows, the unchanged comparator reports the three
 unpatched upstream rows as removed upstream-only findings.
+
+## Subsequent Jackson findings and owner decision
+
+After the earlier 26-finding owner decision, a later scan reported two additional
+inherited HIGH findings in the pinned `10.6.106-ls147` upstream on
+`linux/amd64`: `CVE-2026-91776` and `CVE-2026-91777`. Neither was covered by
+that earlier decision. Fresh review reproduced both against the pinned index
+digest `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`.
+Both are in bundled Jackson databind 2.21.2 at
+`usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar` (JAR SHA-256
+`8c982f01f148d805f0aaac2339011244757e0df7c6ff8951f2fa3f433b8ed849`).
+The latest reviewed LinuxServer `10.6.106-ls148` retains the same 146 UniFi
+JARs byte for byte and the same current HIGH/CRITICAL scanner identities. No
+reviewed vendor-supported fixed LinuxServer image, standalone UniFi release,
+or derivative OS-package remediation was identified. Independent Jackson JAR
+replacement is unqualified.
+
+For `CVE-2026-91776`, UniFi classes include name-based polymorphism using
+`JsonTypeInfo.Id.NAME` with `defaultImpl`, including examples under
+`com.ubnt.ace.ws` and another application class. ObjectMapper and HTTP
+message-converter references are present. If attacker-influenced distinct type
+IDs reach the relevant model and long-lived deserializer, process-lifetime
+retention could cause heap growth or out-of-memory failure. No concrete
+attacker-controlled REST, WebSocket, import, or device route to those models
+was demonstrated; whether a route shares the deserializer and whether it is
+unauthenticated remain unproved.
+
+For `CVE-2026-91777`, static review found no direct UniFi application-class
+reference to `@JsonIdentityInfo`, though the annotation is present in Jackson
+and a dependent schema module. Runtime mix-ins, indirect framework use,
+generated models, and affected endpoint shapes were not excluded. If
+attacker-influenced JSON reaches an identity-enabled collection or map,
+reverse-order unresolved object references could cause quadratic CPU work.
+No concrete affected UniFi input route was established.
+
+On 2026-09-30 Lloyd Smart explicitly approved temporary exact acceptance of
+both findings as `EX-UNIFI-20260930-027` and `EX-UNIFI-20260930-028`, tracked
+by [issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63).
+The registry now has 28 inherited vendor-image exceptions: 21 HIGH and
+7 CRITICAL. All retain the exact pinned digest and `linux/amd64` scope and
+expire at **00:00 UTC on 2026-10-05**; the expiry was not extended.
+The operator reports management, guest-portal, and device-facing endpoints
+restricted to trusted LAN/VPN users and devices, which was not independently
+verified. Preserve and verify that restriction, do not broaden exposure,
+monitor upstream fixes and service memory, and re-review on upstream, package,
+platform, exposure, scanner identity, or applicability change and before
+expiry. This decision is risk acceptance, not remediation or a finding of
+non-exploitability.

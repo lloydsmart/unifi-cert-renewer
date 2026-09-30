@@ -405,12 +405,14 @@ def test_current_unifi_exception_registry_matches_approved_review():
     entries = comparator.load_exceptions(registry, today=date(2026, 9, 30))
     identifiers = {entry.identifier for entry in entries}
 
-    assert len(entries) == len(identifiers) == 26
+    assert len(entries) == len(identifiers) == 28
     assert identifiers == {
         *(f"EX-UNIFI-20260926-{number:03d}" for number in range(1, 26)),
         "EX-UNIFI-20260930-026",
+        "EX-UNIFI-20260930-027",
+        "EX-UNIFI-20260930-028",
     }
-    assert sum(entry.finding.severity == "HIGH" for entry in entries) == 19
+    assert sum(entry.finding.severity == "HIGH" for entry in entries) == 21
     assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 7
     for entry in entries:
         assert entry.upstream_image == (
@@ -442,6 +444,25 @@ def test_current_unifi_exception_registry_matches_approved_review():
         "severity": "HIGH",
         "fixed_version": "2.18.10, 2.21.6, 2.22.2",
     }
+    for identifier, vulnerability_id, fixed_version in (
+        ("EX-UNIFI-20260930-027", "CVE-2026-91776", "2.18.11, 2.21.7, 2.22.3"),
+        ("EX-UNIFI-20260930-028", "CVE-2026-91777", "2.21.7, 2.18.11, 2.22.3"),
+    ):
+        entry = next(entry for entry in entries if entry.identifier == identifier)
+        assert asdict(entry.finding) == {
+            "identity": {
+                "result_class": "lang-pkgs",
+                "result_type": "jar",
+                "target": "Java",
+                "vulnerability_id": vulnerability_id,
+                "package_name": "com.fasterxml.jackson.core:jackson-databind",
+                "package_id": "",
+                "package_path": "usr/lib/unifi/lib/local/jackson-databind-2.21.2.jar",
+                "installed_version": "2.21.2",
+            },
+            "severity": "HIGH",
+            "fixed_version": fixed_version,
+        }
     with pytest.raises(comparator.InvalidReportError, match="expired"):
         comparator.load_exceptions(registry, today=date(2026, 10, 5))
 
