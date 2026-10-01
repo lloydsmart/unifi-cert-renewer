@@ -312,7 +312,10 @@ ambiguous remount/reboot remains an intentional operator-recovery case.
 The earlier protocol v1 executor path and worker-side live verification
 succeeded in the first supervised production renewal on 2026-09-15. Release
 candidate `v0.1.0-rc.2` was subsequently exercised in production using its
-exact released images. The protocol v2 executor-owned live observation has not
-yet been production-accepted. Threshold renewal is implemented above the
-executor boundary; unattended scheduling and key rotation remain later work. The signed-tag
-publication pipeline is implemented.
+exact released images. Protocol v2 protected policy, executor-owned live
+verification, and the F08 issued-certificate policy were production-accepted
+on 2026-10-01 using prerelease `v0.2.0-beta.2` and its exact released images.
+Threshold renewal is implemented above the executor boundary. The project does
+not install or own an external scheduler; the production deployment uses an
+operator-managed daily Unraid User Scripts schedule. Key rotation remains later
+work. The signed-tag publication pipeline is implemented.

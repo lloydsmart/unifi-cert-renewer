@@ -1,13 +1,20 @@
 # UniFi Certificate Renewer
 
+[![Python tests](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/test-python.yml/badge.svg?branch=main)](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/test-python.yml)
+[![Deployment CI](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/deployment.yml/badge.svg?branch=main)](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/deployment.yml)
+[![Security](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/lloydsmart/unifi-cert-renewer/actions/workflows/security.yml)
+[![GitHub release](https://img.shields.io/github/v/release/lloydsmart/unifi-cert-renewer)](https://github.com/lloydsmart/unifi-cert-renewer/releases)
+[![License](https://img.shields.io/github/license/lloydsmart/unifi-cert-renewer)](LICENSE)
+
 Provides a supervised renewal path for the HTTPS certificate used by the UniFi
 Network Application with an internal OPNsense certificate authority.
-Threshold-based one-shot renewal is implemented; an external unattended
-schedule is not deployed by this project.
+Threshold-based one-shot renewal is implemented. The project does not install a
+scheduler; the production deployment uses an operator-managed daily Unraid User
+Scripts job after supervised acceptance.
 
 For the released v0.1.0 deployment, start with the
 [historical installation and operation runbook](docs/installation.md).
-The current source adds protocol v2; use the
+Protocol v2 was production-accepted in `v0.2.0-beta.2`; use the
 [policy and verification guide](docs/policy-and-verification-v2.md) for its
 additional deployment and upgrade requirements. The v0.1.0 runbook records
 digest verification, least-privilege setup, one supervised renewal and
@@ -17,9 +24,10 @@ earlier deployment architecture and evidence.
 
 ## Status
 
-**The v0.1.0 supervised path was production-proven. The current source
-implements executor-owned policy and live verification under protocol v2;
-that change has local coverage and awaits production acceptance.**
+**The v0.1.0 supervised path was production-proven. Protocol v2 and the F08
+issued-leaf policy were production-accepted on 2026-10-01 using released
+`v0.2.0-beta.2` images.** See the
+[acceptance evidence](docs/first-production-renewal.md#protocol-v2-and-f08-production-acceptance-2026-10-01).
 
 The repository currently implements read-only parsing of captured Java
 `keytool` metadata, public DER X.509 certificates, and public PEM PKCS#10 CSRs.
@@ -82,7 +90,7 @@ blocks Java startup. See the [executor and recovery design](docs/unifi-executor.
 A Stage-6 result is explicitly **not a completed renewal**. The first supervised
 production signing, import, live verification, and finalisation completed
 successfully on 2026-09-15. Threshold-based one-shot renewal is implemented;
-deployment of an unattended external schedule remains future work.
+the production deployment now runs an operator-managed daily external schedule.
 
 The repository includes a dedicated non-root renewer image and a strict production
 entrypoint with `inspect`, `csr`, `prepare`, `install`, and `renew` one-shot
@@ -114,8 +122,8 @@ deployment. Stable release `v0.1.0` has been published and production-verified
 using both exact released image digests. This is release evidence, not a
 portable instruction to keep deploying one version; operators must select and
 verify the intended current release through the
-[installation runbook](docs/installation.md). Deployment of an unattended
-external schedule remains future work.
+[installation runbook](docs/installation.md). The production deployment uses
+an operator-managed daily external schedule.
 
 ## Intended Renewal Model
 
@@ -176,14 +184,15 @@ The private key must not be exported from UniFi during routine renewal.
    recorded live OpenJDK 25 evidence.
 7. Live TLS verification following installation. Fresh verified connection,
    exact issued-leaf equality, durable `live_verified` state, and crash-safe
-   finalisation are implemented. The v0.1.0 worker-observed path was
-   production-proven; the current executor-observed v2 path awaits production
-   acceptance.
+   finalisation are implemented. The v0.1.0 worker-observed path and the
+   protocol-v2 executor-owned path were both production-proven, the latter on
+   2026-10-01 with F08 issued-leaf policy.
 8. Threshold-based one-shot renewal is implemented. The `renew` mode checks the
    exact certificate expiry timestamp and is read-only when renewal is not due.
 9. Non-root one-shot container packaging and signed-tag publication are
    implemented. Stable `v0.1.0` has been published and production-verified;
-   external scheduling is not deployed by this project.
+   the project does not install a scheduler. The production deployment uses an
+   operator-managed daily external schedule.
 
 Each state-changing stage will be introduced only after its preceding read-only
 and validation stages are testable.
@@ -353,7 +362,10 @@ The optional repository commit guard can be enabled with:
 ./scripts/setup-git-hooks.sh
 ```
 
-See [`AGENTS.md`](AGENTS.md) for repository-specific development guidance.
+See [Contributing](CONTRIBUTING.md) for the contributor workflow,
+[Code of Conduct](CODE_OF_CONDUCT.md) for participation expectations, and the
+[Security Policy](SECURITY.md) for vulnerability reporting and the security
+model. See [`AGENTS.md`](AGENTS.md) for repository-specific development guidance.
 
 ## License
 

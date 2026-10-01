@@ -4,8 +4,9 @@
 
 `unifi-cert-renewer` provides supervised renewal of the HTTPS certificate used
 by the UniFi Network Application, using an internal OPNsense certificate
-authority. Threshold-based one-shot renewal is implemented; deployment of an
-unattended external schedule remains future work.
+authority. Threshold-based one-shot renewal is implemented. The project does
+not install a scheduler; the production deployment uses an operator-managed
+daily Unraid User Scripts schedule.
 
 The project is security-sensitive. Changes can affect certificate trust,
 OPNsense CA access, UniFi availability, TLS verification, and management of an
@@ -22,10 +23,14 @@ validation, narrow OPNsense signing, issued-certificate validation, guarded
 installation, live verification, the fixed Unix-socket executor boundary, and
 non-root one-shot container packaging are represented by code and tests.
 
-Threshold-based one-shot renewal is implemented. Unattended scheduling and CA
-rollover are not implemented. The signed-tag release pipeline is implemented.
-Stable release `v0.1.0` has been published and production-verified using its
-exact released images.
+Threshold-based one-shot renewal is implemented. Protocol v2 protected policy,
+executor-owned live verification, and the F08 issued-certificate policy were
+production-accepted on 2026-10-01 using prerelease `v0.2.0-beta.2`. A subsequent
+threshold `renew` returned `renewal_not_due`. CA rollover is not implemented.
+The project does not install a scheduler; the production deployment uses an
+operator-managed daily external schedule. The signed-tag release pipeline is
+implemented. Stable release `v0.1.0` was production-verified using its exact
+released images.
 
 Do not assume an interface, container layout, command, file path, keystore
 format, or UniFi implementation detail has been validated unless it is
@@ -43,12 +48,13 @@ The implementation stages are:
 6. Certificate installation against the existing keypair — implemented and
    production-proven under supervision.
 7. Live post-install verification — implemented and production-proven under
-   supervision.
-8. Threshold-based one-shot renewal — implemented; unattended scheduling is
-   not deployed.
+   supervision, including executor-owned protocol-v2 verification.
+8. Threshold-based one-shot renewal — implemented; `renewal_not_due` was
+   observed after the protocol-v2 production acceptance. The project does not
+   install a scheduler; the production deployment uses an external daily one.
 9. Non-root one-shot container packaging and signed-tag release publication —
-   implemented and production-proven with stable `v0.1.0`; unattended
-   scheduling is not completed.
+   implemented and production-proven with stable `v0.1.0` and prerelease
+   `v0.2.0-beta.2`.
 
 Destructive or state-changing stages must not be introduced before their
 read-only prerequisites are testable.

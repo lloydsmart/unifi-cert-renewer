@@ -1,8 +1,9 @@
 # Protected policy and executor-owned live verification (protocol v2)
 
-This describes the current source implementation. It has local test coverage but
-has **not** yet been accepted against a production UniFi deployment. The
-2026-09-15 production evidence describes the earlier protocol v1 images.
+This describes the protocol-v2 implementation and F08 issued-leaf policy,
+production-accepted on 2026-10-01 using released `v0.2.0-beta.2` images.
+The 2026-09-15 production evidence describes the earlier protocol-v1 images.
+See the [detailed acceptance evidence](first-production-renewal.md#protocol-v2-and-f08-production-acceptance-2026-10-01).
 
 ## Trust boundary
 
@@ -127,12 +128,18 @@ An old/new mismatch fails before mutation. The protected policy directory is a
 new mount in both; keep the existing socket directory, worker-only OPNsense
 secrets and UniFi-only keystore password separate.
 
-## Deployment acceptance still required
+## Production acceptance — 2026-10-01
 
-Before authorising production use, establish from **inside the UniFi executor
-container** that the configured numeric address and port are reachable and
-represent the TLS service operators intend to attest. Confirm the configured
-TLS identity and CA authenticate that endpoint. The historical worker-side
-observation does not prove this network view. If TLS terminates elsewhere and
-the executor observes a different endpoint, revisit the architecture rather
-than treating that observation as completion evidence.
+The required inside-executor network view was exercised in production with
+`172.26.0.3:8443` and TLS identity `unifi-mgmt.lloydsmart.com`. Under protocol
+v2, the executor used its protected policy and performed its own fresh,
+CA- and hostname-verified live TLS observation before reporting completion.
+Independent OpenSSL verification of the same address and identity returned
+`Verify return code: 0 (ok)` and observed the exact installed serial `1B` leaf.
+See the [complete F08 acceptance record](first-production-renewal.md#protocol-v2-and-f08-production-acceptance-2026-10-01).
+
+For another deployment, confirm from **inside its UniFi executor container**
+that the configured numeric address and port reach the intended TLS service and
+that the configured CA and identity authenticate it. If TLS terminates elsewhere
+and the executor observes a different endpoint, revisit the architecture before
+treating that observation as completion evidence.
