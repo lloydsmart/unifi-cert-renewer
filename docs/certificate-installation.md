@@ -142,8 +142,9 @@ Production installation is exposed only through the reviewed fixed Unix-socket
 boundary and s6 startup recovery integration described in
 [the production deployment guide](production-deployment.md). The first supervised
 production installation and worker-side live finalisation succeeded on
-2026-09-15 under protocol v1; the current executor-owned v2 observation
-awaits production acceptance. See the
-[recorded execution evidence](first-production-renewal.md#first-production-execution-evidence).
-Threshold-based one-shot renewal is implemented in the production entrypoint;
-deployment of an unattended external schedule remains future work.
+2026-09-15 under protocol v1. The executor-owned protocol-v2 observation and
+F08 issued-leaf policy were production-accepted on 2026-10-01. See the
+[recorded acceptance evidence](first-production-renewal.md#protocol-v2-and-f08-production-acceptance-2026-10-01).
+Threshold-based one-shot renewal is implemented in the production entrypoint.
+The project does not install a scheduler; the production deployment uses an
+operator-managed daily external schedule.

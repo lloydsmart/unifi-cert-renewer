@@ -1,10 +1,12 @@
 # Production deployment
 
-> **Release history:** The v0.1.0 configuration and production evidence below
-> use protocol v1. Current source uses protocol v2; follow the
-> [protected policy and verification guide](policy-and-verification-v2.md)
-> for its policy mounts, request shapes, recovery gate and acceptance checks.
-> Do not deploy a v2 image with the v1 configuration below.
+> **Release history:** The v0.1.0 configuration and historical production
+> evidence below use protocol v1. Protocol v2 and the F08 issued-leaf policy
+> were production-accepted on 2026-10-01 using `v0.2.0-beta.2`; see the
+> [detailed acceptance record](first-production-renewal.md#protocol-v2-and-f08-production-acceptance-2026-10-01).
+> Follow the [protected policy and verification guide](policy-and-verification-v2.md)
+> for v2 policy mounts, request shapes and the recovery gate. Do not deploy a
+> v2 image with the v1 configuration below.
 
 This is the detailed deployment and security reference. Operators installing or
 upgrading a released deployment should follow the ordered
@@ -308,8 +310,10 @@ treated as persistent on any filesystem. If remount/reboot makes recorded
 identity ambiguous, startup blocks and preserves evidence for an operator. Do
 not edit the journal or delete rollback artifacts merely to make startup pass.
 
-The threshold policy is implemented by the production `renew` mode. External
-unattended scheduling is not deployed by issue #17.
+The threshold policy is implemented by the production `renew` mode. The project
+does not install a scheduler. The production deployment uses an operator-managed
+Unraid User Scripts job to invoke the digest-pinned renewer daily after
+supervised acceptance.
 
 ## OPNsense least-privilege ACL
 

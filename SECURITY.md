@@ -43,11 +43,12 @@ Preserving that separation is the primary security objective of this project.
 The supervised renewal path, non-root renewer image, fixed Unix-socket executor,
 startup recovery, live TLS finalisation, and signed-tag release pipeline are
 implemented. The first complete supervised production renewal succeeded on
-2026-09-15 with the earlier protocol v1 path. Stable v0.1.0 has been
-published and production-verified. The current protocol v2 protected-policy
-and executor-observed TLS path has local coverage but no production acceptance
-yet. Threshold-based renewal is implemented; unattended scheduling is not
-deployed.
+2026-09-15 with the earlier protocol v1 path; stable `v0.1.0` was published and
+production-verified. Protocol v2 protected policy, executor-owned live TLS
+verification, and the F08 issued-certificate policy were production-accepted
+on 2026-10-01 with prerelease `v0.2.0-beta.2`. Threshold-based renewal is
+implemented. The project does not install a scheduler; this production
+deployment uses an operator-managed external daily schedule.
 
 Security requirements documented here distinguish implemented controls from
 requirements for future work. A control is not described as implemented without

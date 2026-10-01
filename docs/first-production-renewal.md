@@ -32,9 +32,10 @@ scheduling, and automatic retries are not part of this procedure.
    digest for a released deployment or its exact local image ID for supervised
    pre-release validation. Inspect the resolved Compose definition. Confirm
    uid/gid `1000:1000`, supplemental gid
-   `984`, and only the shared runtime and renewer-secrets mounts. Confirm it has
-   no `/config`, UniFi keystore-password secret, Docker socket, capabilities, or
-   restart loop.
+   `984`, and the required shared runtime and renewer-secrets mounts. For
+   protocol v2, also confirm the protected policy mount and persistent lifecycle
+   lock mount. Confirm it has no `/config`, UniFi keystore-password secret,
+   Docker socket, capabilities, or restart loop.
 5. Populate the fixed `renewer-config.json`, API credential files, public
    issuing CA, and optional OPNsense HTTPS CA. Validate their owner/mode policy.
    Do not place the UniFi keystore password in this directory.
@@ -87,8 +88,8 @@ metadata, keep the appdata backup available, and review the journal/state agains
 
 External scheduling, automatic retries, and general daemonisation remain out of
 scope for this acceptance procedure. Each command above is a separate manual
-one-shot invocation; the later `renew` threshold mode is not part of the
-historical qualification sequence.
+one-shot invocation; the `renew` threshold mode is checked separately after
+supervised qualification.
 
 ## First production execution evidence
 
@@ -139,3 +140,86 @@ socket permissions and process state, and both exact running release digests.
 These immutable references record the RC2 acceptance evidence. They are not
 timeless production defaults; select current deployment digests from the chosen
 GitHub release as described in the [installation runbook](installation.md).
+
+## Protocol v2 and F08 production acceptance (2026-10-01)
+
+Protocol v2 and the F08 issued-leaf policy were production-accepted under
+supervision using release `v0.2.0-beta.2` from source commit
+`f5b486483d319a92be8b5fd7cf3225a9ac604ff5`. The deployed images were
+identified by these immutable registry references:
+
+* Renewer:
+  `ghcr.io/lloydsmart/unifi-cert-renewer@sha256:f51eccaf380e0c9e1a6d829478a54c6fa21674a5dc33f072e928f2966981acfa`
+* UniFi derivative:
+  `ghcr.io/lloydsmart/unifi-network-application-cert-renewer@sha256:c538717d4eeca8647c9eb6e92d858308406b524da4a9d1bc4f279fcf1ff9506f`
+
+The protected policy file SHA-256 was
+`49e18dda9dfd808a4df8e88208e9baf4de4f4ec6a942b565356bb4b67ebb18fb`.
+The UniFi management address was `192.168.6.70`. The executor's shared-network
+live TLS address was `172.26.0.3:8443`, with verified TLS identity
+`unifi-mgmt.lloydsmart.com`. These are observations of this deployment, not
+defaults for other installations.
+
+Read-only `inspect` and `csr` gates passed. The CSR used the existing RSA 4096
+keypair, had a valid proof-of-possession signature, and preserved the expected
+SPKI SHA-256
+`95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`.
+
+`prepare` returned `state=prepared` and `renewal_complete=false` for serial
+`1A`, leaf SHA-256
+`13b7f956e1c9f323b1ecbe4a15e34b0c5898f5723b15f90c6c08585b7627f43b`.
+The certificate was valid from `2026-09-30T23:33:37Z` to
+`2027-11-01T23:33:37Z`, an exact 397-day lifetime, and retained the expected
+SPKI. **Serial `1A` was deliberately prepare-only and was never installed
+into UniFi.** The operator subsequently removed its OPNsense certificate
+record through the normal, separately authorised administrative cleanup path.
+The renewer's restricted OPNsense ACL was not used or broadened for deletion.
+The installed/live serial `1B` certificate record was retained.
+
+The subsequent `install` signed and installed serial `1B`, with these public
+properties:
+
+| Property | Accepted installed leaf |
+| --- | --- |
+| SHA-256 | `3b7c55023306dfea45bf66539f183a8640a819dbdd1f6b7386e1491569c98d22` |
+| SPKI SHA-256 | `95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009` |
+| Subject | `CN=unifi-mgmt.lloydsmart.com` |
+| DNS SAN | `unifi-mgmt.lloydsmart.com` |
+| Validity | `2026-09-30T23:35:35Z` to `2027-11-01T23:35:35Z` |
+| Exact lifetime | 397 days |
+
+The install result was `state=renewal_complete` with
+`renewal_complete=true`. Before completion, the protocol-v2 executor used its
+own protected policy to make a fresh CA- and hostname-verified TLS connection
+from inside the UniFi container and compare the served certificate with the
+issued leaf.
+
+Independent post-install OpenSSL verification connected to
+`172.26.0.3:8443` for hostname `unifi-mgmt.lloydsmart.com`. CA and hostname
+verification returned `Verify return code: 0 (ok)`. The observed live leaf
+was serial `1B` with SHA-256
+`3b7c55023306dfea45bf66539f183a8640a819dbdd1f6b7386e1491569c98d22`
+and SPKI SHA-256
+`95092b344ca9b4e56a34a85088b188be0b3ffe7ff22842afc503c4e25c9d7009`,
+matching the accepted installed leaf and expected keypair.
+
+After completion, all four transaction artefacts were absent:
+`.cert-renewer-journal`, `.cert-renewer-journal-new`,
+`.cert-renewer-stage`, and `.cert-renewer-rollback`. The lifecycle directory
+was `root:1000` mode `0750`; its `renewal.lock` was a regular, one-link,
+zero-byte file owned by `root:1000` with mode `0660`. The lock inode remained
+stable through the supervised acceptance. Startup recovery and the post-init
+recovery recheck both reported `no_active_transaction`.
+
+A subsequent routine `renew` returned `state=renewal_not_due`,
+`renewal_due=false`, `renewal_complete=false`, and `renew_before_days=30`.
+The external scheduler guard was held throughout state-changing acceptance and
+released afterward. The project does not install a scheduler; this production
+deployment now uses an operator-managed Unraid User Scripts job to invoke the
+digest-pinned renewer daily.
+
+The configured issuing CA has serial number `0`. The current `cryptography`
+version emits `CryptographyDeprecationWarning` because RFC 5280 requires
+positive certificate serial numbers; a future release will reject this CA.
+This is CA maintenance debt. The F08 acceptance above succeeded despite the
+warning.
