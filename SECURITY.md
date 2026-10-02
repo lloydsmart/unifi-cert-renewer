@@ -229,6 +229,10 @@ Internal CAs must be trusted explicitly through configured public CA material.
 Use TLS 1.2 or newer unless future compatibility evidence establishes a stricter
 minimum.
 
+The OPNsense API client accepts only an explicit ASCII HTTPS origin and does not
+convert or normalize Unicode hostnames. It ignores environment and system proxy
+settings so they cannot redirect API requests from the configured origin.
+
 ## OPNsense API Credentials
 
 OPNsense API credentials are secrets.

@@ -308,8 +308,15 @@ omitted.
 - `certificate_policy.dns_sans`: complete ordered list of required DNS SANs.
 - `certificate_policy.ip_sans`: complete ordered list of required IP SANs; use
   an empty list when none are required.
-- `opnsense.base_url`: HTTPS origin of the intended OPNsense instance, with no
-  credentials, path, query, or fragment.
+- `opnsense.base_url`: explicit ASCII HTTPS origin of the intended OPNsense
+  instance, using a valid DNS name, strict IPv4 address, or bracketed IPv6
+  address. An optional port must be 1 through 65535. One trailing `/` is
+  accepted; credentials, other paths, queries, and fragments are rejected.
+  Raw Unicode hostnames are rejected without IDNA conversion or Unicode
+  normalization. Remove surrounding whitespace and trailing DNS dots from older
+  configurations; replace legacy numeric address forms with strict IPv4
+  literals or DNS names before upgrading. OPNsense API requests ignore inherited
+  environment and system proxy settings.
 - `opnsense.timeout_seconds`: positive request timeout for one OPNsense API
   request.
 - `opnsense.tls_ca_name`: filename of the optional public CA used to authenticate
