@@ -44,6 +44,10 @@ verification, TLS 1.2 or newer, no redirects, and credentials supplied through
 fixed `/run/secrets/opnsense-api-key` and
 `/run/secrets/opnsense-api-secret` files. An optional custom TLS CA is identified
 by a single filename beneath `/run/secrets`; arbitrary paths are not accepted.
+The base URL must be one explicit ASCII HTTPS origin with a valid DNS name or IP
+literal. Raw Unicode hostnames are rejected; the renewer performs no IDNA
+conversion or Unicode hostname normalization. OPNsense API requests ignore
+environment and system proxy settings.
 For RSA CSRs it derives OPNsense `key_type` from the CSR and supports 2048,
 3072, and 4096-bit keys.
 Signing permits SHA-256, SHA-384, or SHA-512 and certificate lifetimes from 1

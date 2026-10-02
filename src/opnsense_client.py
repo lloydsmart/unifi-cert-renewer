@@ -10,7 +10,13 @@ import uuid
 from ipaddress import ip_address
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+from urllib.request import (
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 from csr import CSRInfo, inspect_csr, validate_csr_spki
 from secure_file import SecureFileError, open_secure_file
@@ -36,6 +42,7 @@ OPNSENSE_API_SECRET_NAME = "opnsense-api-secret"
 
 _CA_REFERENCE_RE = re.compile(r"[0-9a-f]{13}\Z")
 _DNS_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
+_NUMERIC_HOST_COMPONENT_RE = re.compile(r"(?:[0-9]+|0[xX][0-9A-Fa-f]+)\Z")
 _UNSAFE_TEXT_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
@@ -56,6 +63,7 @@ class _DuplicateJSONKeyError(ValueError):
 
 def _open_url(request: Request, *, timeout: float, ssl_context: ssl.SSLContext):
     opener = build_opener(
+        ProxyHandler({}),
         RejectRedirectHandler(),
         HTTPSHandler(context=ssl_context),
     )
@@ -63,22 +71,20 @@ def _open_url(request: Request, *, timeout: float, ssl_context: ssl.SSLContext):
 
 
 def validate_base_url(base_url: str) -> str:
-    """Validate and canonicalize an origin-only HTTPS base URL."""
+    """Validate one explicit HTTPS origin and remove its optional final slash."""
 
-    if not isinstance(base_url, str) or not base_url.strip():
+    if not isinstance(base_url, str) or not base_url:
         raise ValueError("OPNsense base URL must be a non-empty HTTPS URL")
-    candidate = base_url.strip()
-    if any(
+    if not base_url.isascii() or any(
         character.isspace()
         or unicodedata.category(character) in _UNSAFE_TEXT_CATEGORIES
-        for character in candidate
+        for character in base_url
     ):
         raise ValueError("OPNsense base URL contains unsupported characters")
 
     try:
-        parsed = urlsplit(candidate)
+        parsed = urlsplit(base_url)
         hostname = parsed.hostname
-        port = parsed.port
     except ValueError as error:
         raise ValueError("OPNsense base URL is invalid") from error
 
@@ -86,34 +92,54 @@ def validate_base_url(base_url: str) -> str:
         raise ValueError("OPNsense base URL must be a valid HTTPS URL")
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("OPNsense base URL must not contain credentials")
-    if "?" in candidate or "#" in candidate:
+    if "?" in base_url or "#" in base_url:
         raise ValueError("OPNsense base URL must not contain a query or fragment")
     if parsed.path not in {"", "/"}:
         raise ValueError("OPNsense base URL must not contain a path")
-    if parsed.netloc.endswith(":") or (port is not None and not 1 <= port <= 65535):
+
+    authority = parsed.netloc
+    bracketed = authority.startswith("[")
+    if bracketed:
+        closing_bracket = authority.find("]")
+        suffix = authority[closing_bracket + 1 :]
+        if suffix and not suffix.startswith(":"):
+            raise ValueError("OPNsense base URL is invalid")
+        port_text = suffix[1:] if suffix else None
+    else:
+        port_text = authority.partition(":")[2] if ":" in authority else None
+
+    if port_text is not None and re.fullmatch(r"[0-9]+", port_text) is None:
         raise ValueError("OPNsense base URL contains an invalid port")
-    _validate_url_hostname(hostname)
 
-    return candidate.rstrip("/")
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("OPNsense base URL contains an invalid port") from None
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("OPNsense base URL contains an invalid port")
+
+    _validate_url_hostname(hostname, bracketed=bracketed)
+
+    return base_url[:-1] if parsed.path == "/" else base_url
 
 
-def _validate_url_hostname(hostname: str) -> None:
+def _validate_url_hostname(hostname: str, *, bracketed: bool) -> None:
     if "%" in hostname:
         raise ValueError("OPNsense base URL contains an invalid hostname")
     try:
-        ip_address(hostname)
-        return
+        address = ip_address(hostname)
     except ValueError:
-        pass
-    try:
-        hostname.encode("ascii")
-    except UnicodeEncodeError:
-        raise ValueError("OPNsense base URL contains an invalid hostname") from None
-    dns_name = hostname[:-1] if hostname.endswith(".") else hostname
-    if (
-        not dns_name
-        or len(dns_name) > 253
-        or any(_DNS_LABEL_RE.fullmatch(label) is None for label in dns_name.split("."))
+        if bracketed or all(
+            _NUMERIC_HOST_COMPONENT_RE.fullmatch(label) for label in hostname.split(".")
+        ):
+            raise ValueError("OPNsense base URL contains an invalid hostname") from None
+    else:
+        if (address.version == 6) != bracketed:
+            raise ValueError("OPNsense base URL contains an invalid hostname")
+        return
+
+    if len(hostname) > 253 or any(
+        _DNS_LABEL_RE.fullmatch(label) is None for label in hostname.split(".")
     ):
         raise ValueError("OPNsense base URL contains an invalid hostname")
 
