@@ -680,8 +680,9 @@ Security properties that require negative tests include:
 ## Current Accepted Risks
 
 On 2026-09-30 Lloyd Smart, as owner and reviewer, approved 26 inherited
-vendor-image findings and subsequently approved two more Jackson findings. The
-current temporary acceptance covers 28 findings: 21 HIGH and 7 CRITICAL.
+vendor-image findings and subsequently approved two Jackson Databind findings
+that day. On 2026-10-02, he approved two Jackson Core findings. The current
+temporary acceptance covers 30 findings: 23 HIGH and 7 CRITICAL.
 The [exception registry](.security/container-exceptions.json) scopes each record
 to Linux amd64, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
@@ -692,7 +693,7 @@ identity, or introduced finding. The exceptions expire at **00:00 UTC on
 
 The [30 September finding review](docs/vendor-finding-review-2026-09-30.md)
 records the original 26-finding decision and a separate subsequent review of
-Jackson findings `CVE-2026-91776` and `CVE-2026-91777`. The former has positive
+Jackson Databind findings `CVE-2026-91776` and `CVE-2026-91777`. The former has positive
 UniFi name-based polymorphism/defaultImpl configuration evidence, but no
 demonstrated attacker-controlled route. The latter has no direct UniFi
 application annotation evidence, while indirect or runtime use remains
@@ -702,14 +703,27 @@ current HIGH/CRITICAL identities, so it does not reduce this finding set. The ea
 [17 September per-finding review](docs/vendor-finding-review-2026-09-17.md)
 remain historical evidence.
 
+The [2 October finding review](docs/vendor-finding-review-2026-10-02.md)
+records the temporary acceptance of Jackson Core findings `CVE-2026-89407` and
+`CVE-2026-89425`. For the former, Jackson Databind directly calls the vulnerable
+numeric helper and UniFi uses Jackson, but its explicit Spring MVC mapper
+disables scalar coercion. No attacker-controlled vulnerable route was
+demonstrated; alternate mapper, runtime, and indirect paths remain unresolved.
+For the latter, the vulnerable `DataInput` parser capability is bundled, but
+the complete static review found no UniFi application reference to `DataInput`,
+`DataInputStream`, or Jackson's `DataInput` overload. Indirect, reflection,
+framework, and generated paths remain unresolved, so this is not proof of
+non-applicability.
+
 The operator reports management, guest-portal, and device-facing endpoints
 restricted to trusted LAN/VPN users and devices. This was not independently
-verified, and no advisory-specific mitigation has been established. Malicious
+verified and is context, not an advisory-specific mitigation. Malicious
 or compromised permitted clients, devices, peers, and stored content remain
 residual risks. Prefer a vendor-supported fixed image. Re-review on upstream,
 package, platform, exposure, scanner identity, or applicability change and
 before expiry. [Issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63)
-tracks remediation. This acceptance is not remediation or deployment approval.
+tracks remediation. This temporary risk acceptance is not remediation, proof of
+non-exploitability, or deployment approval.
 
 ## Security Review Triggers
 
