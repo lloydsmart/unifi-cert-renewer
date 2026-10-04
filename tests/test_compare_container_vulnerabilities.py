@@ -402,17 +402,18 @@ def test_current_unifi_exception_registry_matches_approved_review():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 10, 2))
+    entries = comparator.load_exceptions(registry, today=date(2026, 10, 4))
     identifiers = {entry.identifier for entry in entries}
-    new_identifiers = {"EX-UNIFI-20261002-029", "EX-UNIFI-20261002-030"}
 
     assert len(entries) == len(identifiers) == 30
     assert identifiers == {
-        *(f"EX-UNIFI-20260926-{number:03d}" for number in range(1, 26)),
+        *(f"EX-UNIFI-20260926-{number:03d}" for number in range(2, 26)),
         "EX-UNIFI-20260930-026",
         "EX-UNIFI-20260930-027",
         "EX-UNIFI-20260930-028",
-        *new_identifiers,
+        "EX-UNIFI-20261002-029",
+        "EX-UNIFI-20261002-030",
+        "EX-UNIFI-20261004-031",
     }
     assert sum(entry.finding.severity == "HIGH" for entry in entries) == 23
     assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 7
@@ -423,12 +424,8 @@ def test_current_unifi_exception_registry_matches_approved_review():
         )
         assert entry.platform == "linux/amd64"
         assert entry.owner == entry.reviewed_by == "Lloyd Smart"
-        assert entry.reviewed_on == (
-            date(2026, 10, 2)
-            if entry.identifier in new_identifiers
-            else date(2026, 9, 30)
-        )
-        assert entry.expires_on == date(2026, 10, 5)
+        assert entry.reviewed_on == date(2026, 10, 4)
+        assert entry.expires_on == date(2026, 10, 12)
         assert entry.tracking_url == (
             "https://github.com/lloydsmart/unifi-cert-renewer/issues/63"
         )
@@ -472,6 +469,7 @@ def test_current_unifi_exception_registry_matches_approved_review():
     for identifier, vulnerability_id, fixed_version in (
         ("EX-UNIFI-20261002-029", "CVE-2026-89407", "2.18.11, 2.21.7, 2.22.3"),
         ("EX-UNIFI-20261002-030", "CVE-2026-89425", "2.21.7, 2.22.3, 2.18.11"),
+        ("EX-UNIFI-20261004-031", "CVE-2026-68494", "2.18.8, 2.21.4"),
     ):
         entry = next(entry for entry in entries if entry.identifier == identifier)
         assert asdict(entry.finding) == {
@@ -489,7 +487,44 @@ def test_current_unifi_exception_registry_matches_approved_review():
             "fixed_version": fixed_version,
         }
     with pytest.raises(comparator.InvalidReportError, match="expired"):
-        comparator.load_exceptions(registry, today=date(2026, 10, 5))
+        comparator.load_exceptions(registry, today=date(2026, 10, 12))
+
+
+def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
+    registry = (
+        Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
+    )
+    entries = comparator.load_exceptions(registry, today=date(2026, 10, 11))
+    assert all(entry.finding.fixed_version for entry in entries)
+    comparison = comparator.Comparison(
+        inherited=tuple(entry.finding for entry in entries),
+        introduced=(),
+        removed=(),
+    )
+    accepted = comparator.apply_exceptions(
+        comparison, entries, entries[0].upstream_image, PLATFORM
+    )
+    assert len(accepted.accepted) == 30
+    assert not accepted.blocked
+
+    cve = next(
+        entry.finding
+        for entry in entries
+        if entry.identifier == "EX-UNIFI-20261004-031"
+    )
+    ghsa = comparator.Finding(
+        comparator.FindingIdentity(
+            **(asdict(cve.identity) | {"vulnerability_id": "GHSA-r7wm-3cxj-wff9"})
+        ),
+        cve.severity,
+        cve.fixed_version,
+    )
+    changed = comparator.Comparison(inherited=(ghsa,), introduced=(), removed=())
+    result = comparator.apply_exceptions(
+        changed, entries, entries[0].upstream_image, PLATFORM
+    )
+    assert result.blocked
+    assert not result.accepted
 
 
 def matching_comparison():

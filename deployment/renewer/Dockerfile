@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.14-slim-bookworm@sha256:82bc3c539b8813ada9d68c63b40158fa002f7f33de9bf3312a3dfdc0620dff56
+FROM python:3.14-slim-trixie@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151
 
-# The pinned upstream predates Bookworm's PCRE2 security update.
+# The pinned upstream predates Trixie's CVE-2026-103111 PCRE2 security update.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends --only-upgrade \
-        libpcre2-8-0=10.42-1+deb12u1 \
+        libpcre2-8-0=10.46-1~deb13u3 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG UNRAID_ICON_REF=main
