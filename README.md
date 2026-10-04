@@ -381,10 +381,12 @@ See [`LICENSE`](LICENSE).
 Container CI and release verification enforce the
 [common image policy](docs/container-image-policy.md). Introduced HIGH/CRITICAL
 findings block even without a fix; fixable inherited findings require an exact,
-explicitly reviewed, unexpired exception. Lloyd Smart approved the exact 23
-remaining inherited vendor findings for Linux amd64 until **1 October 2026**.
-The [finding review](docs/vendor-finding-review-2026-09-17.md) and
+explicitly reviewed, unexpired exception. Lloyd Smart approved 30 exact
+inherited vendor findings for the retained `ls147` Linux amd64 image until
+**00:00 UTC on 12 October 2026**. The
+[latest decision](docs/vendor-finding-review-2026-10-04.md),
+[earlier finding review](docs/vendor-finding-review-2026-09-17.md), and
 [accepted-risk record](SECURITY.md#current-accepted-risks) state the scope,
 operator-reported LAN/VPN restriction, and unresolved risks. These exceptions
 do not apply to another upstream, package version, platform, or introduced
-finding, and expire automatically at 00:00 UTC on that date.
+finding, and expire automatically at that time.
