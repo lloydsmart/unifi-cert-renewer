@@ -118,16 +118,19 @@ docker build -f deployment/renewer/Dockerfile \
 ```
 
 The Dockerfile pins the reviewed multi-platform manifest for the minimal
-official `python:3.14-slim-bookworm` base and installs the hash-locked runtime
+official `python:3.14-slim-trixie` base and installs the hash-locked runtime
 requirements. If that pin is intentionally updated, review the new upstream
 image and record the replacement digest. After pushing the reviewed image,
 deploy its registry digest rather than the local tag. Before publication, an
 exact local image ID may identify a supervised validation build, but it is not a
 substitute for the registry digest required by a released deployment.
 
-The pinned Bookworm base receives the exact PCRE2 security package update
-`libpcre2-8-0=10.42-1+deb12u1`. Runtime dependencies are installed during the
-build; the worker then removes pip and its bundled ensurepip installer. Package
+The pinned Trixie base receives the exact PCRE2 security package update
+`libpcre2-8-0=10.46-1~deb13u3` for CVE-2026-103111. The
+[worker qualification record](worker-image-qualification-2026-10-04.md) covers
+local Linux amd64 compatibility and the remaining inherited findings; it does
+not establish production qualification. Runtime dependencies are installed during
+the build; the worker then removes pip and its bundled ensurepip installer. Package
 changes therefore require a reviewed image rebuild. Packaging validation checks
 the real entrypoint and rejects retained pip, ensurepip, setuptools or msgpack
 tooling. The UniFi application image and its executor environment are separate.
