@@ -7,6 +7,7 @@ import re
 import ssl
 import unicodedata
 import uuid
+from collections.abc import Callable
 from ipaddress import ip_address
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -61,12 +62,20 @@ class _DuplicateJSONKeyError(ValueError):
     """Internal marker for ambiguous JSON objects."""
 
 
-def _open_url(request: Request, *, timeout: float, ssl_context: ssl.SSLContext):
+def _open_url(
+    request: Request,
+    *,
+    timeout: float,
+    ssl_context: ssl.SSLContext,
+    before_transport: Callable[[], None] | None = None,
+):
     opener = build_opener(
         ProxyHandler({}),
         RejectRedirectHandler(),
         HTTPSHandler(context=ssl_context),
     )
+    if before_transport is not None:
+        before_transport()
     return opener.open(request, timeout=timeout)
 
 
@@ -313,7 +322,12 @@ class OPNsenseClient:
         return "Basic " + base64.b64encode(credentials).decode("ascii")
 
     def _request_json(
-        self, method: str, path: str, payload: dict[str, object] | None = None
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        *,
+        before_transport: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         headers = {
             "Accept": "application/json",
@@ -335,6 +349,7 @@ class OPNsenseClient:
                 request,
                 timeout=self.timeout,
                 ssl_context=self._ssl_context,
+                **({"before_transport": before_transport} if before_transport else {}),
             ) as response:
                 response_data = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as error:
@@ -402,6 +417,7 @@ class OPNsenseClient:
         digest: str,
         lifetime_days: int,
         description: str,
+        before_transport: Callable[[], None] | None = None,
     ) -> str:
         """Submit an inspected CSR, deriving all signed identity fields from it."""
 
@@ -451,6 +467,7 @@ class OPNsenseClient:
                     "descr": description,
                 }
             },
+            **({"before_transport": before_transport} if before_transport else {}),
         )
         if response.get("result") != "saved":
             raise OPNsenseAPIError("OPNsense did not save the signed certificate")

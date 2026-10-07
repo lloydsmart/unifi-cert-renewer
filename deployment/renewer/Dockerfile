@@ -29,7 +29,7 @@ RUN python -m pip install --no-cache-dir --require-hashes \
     && rm -rf /usr/local/lib/python3.14/ensurepip
 
 COPY src/certificate.py src/csr.py src/opnsense_client.py src/production_renewer.py \
-    src/public_key.py src/renewal_policy.py src/secure_file.py src/tls_policy.py src/unifi_cert_renewer.py \
+    src/public_key.py src/renewal_policy.py src/run_result.py src/secure_file.py src/tls_policy.py src/unifi_cert_renewer.py \
     src/unifi_client.py src/unifi_executor_client.py src/unifi_tls.py \
     /opt/unifi-cert-renewer/src/
 # The production entrypoint uses the documented import path, while this renewer

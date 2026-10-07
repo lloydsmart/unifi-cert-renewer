@@ -771,7 +771,9 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
     assert "src/unifi_executor_files.py" not in dockerfile
     assert "src/unifi_process.py" not in dockerfile
     assert "src/renewal_policy.py" in dockerfile
+    assert "src/run_result.py" in dockerfile
     executor_dockerfile = (REPOSITORY_ROOT / "deployment/unifi/Dockerfile").read_text()
+    assert "src/run_result.py" not in executor_dockerfile
     assert "src/renewal_policy.py" in executor_dockerfile
     assert "src/unifi_tls.py" in executor_dockerfile
     assert 'user: "1000:1000"' in compose
@@ -789,8 +791,13 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
         "unifi_executor_client.py",
         "unifi_tls.py",
         "renewal_policy.py",
+        "run_result.py",
     ):
         assert f"!src/{source}" in dockerignore
+    packaging_check = (
+        REPOSITORY_ROOT / "scripts/validate-container-packaging.sh"
+    ).read_text()
+    assert "grep -Fxq '!src/run_result.py'" in packaging_check
     for forbidden in (
         "/config",
         "unifi-keystore-password",
@@ -798,6 +805,34 @@ def test_renewer_image_and_compose_preserve_least_privilege_metadata():
         "restart: always",
     ):
         assert forbidden not in compose
+
+
+def test_packaging_check_rejects_missing_run_result_build_context(tmp_path):
+    """The packaging gate checks source inclusion before inspecting built images."""
+    root = tmp_path / "source"
+    (root / "scripts").mkdir(parents=True)
+    (root / "deployment/renewer").mkdir(parents=True)
+    script = root / "scripts/validate-container-packaging.sh"
+    script.write_bytes(
+        (REPOSITORY_ROOT / "scripts/validate-container-packaging.sh").read_bytes()
+    )
+    (root / "deployment/renewer/Dockerfile").write_text(
+        "COPY src/run_result.py /opt/run_result.py\n", encoding="utf-8"
+    )
+    (root / ".dockerignore").write_text("**\n!src/\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(script), "worker-test", "executor-test"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "Renewer run_result.py is excluded from the Docker build context.\n"
+    )
 
 
 @pytest.mark.parametrize("window", [30, 31])
