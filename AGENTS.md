@@ -194,6 +194,7 @@ src/
     unifi_tls.py
     opnsense_client.py
     public_key.py
+    run_result.py
     secure_file.py
     tls_policy.py
 

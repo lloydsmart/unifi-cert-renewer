@@ -1,5 +1,6 @@
 """Strict one-shot production entrypoint for the unprivileged renewer."""
 
+import argparse
 import errno
 import fcntl
 import json
@@ -8,7 +9,7 @@ import os
 import stat
 import sys
 import unicodedata
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -17,6 +18,7 @@ from certificate import MAX_CERTIFICATE_LIFETIME_DAYS, CertificateInfo
 from csr import CSRInfo
 from opnsense_client import OPNsenseClient, validate_base_url
 from renewal_policy import RenewalPolicy, load_policy
+from run_result import Operation, Outcome, Reason, RunEvidence
 from secure_file import SecureFileError, open_secure_file, validate_secure_filename
 from unifi_cert_renewer import InstallationStageResult, run_to_installation
 from unifi_client import (
@@ -244,10 +246,16 @@ def load_production_config() -> ProductionConfig:
     return _parse_config(value, load_policy())
 
 
-def build_production_unifi_client(authority: RenewalPolicy) -> UnifiClient:
+def build_production_unifi_client(
+    authority: RenewalPolicy, *, on_dispatch=None
+) -> UnifiClient:
     """Construct the sole supported production UniFi access path."""
 
-    return UnifiClient(SocketUnifiExecutionBoundary(authority))
+    return UnifiClient(
+        SocketUnifiExecutionBoundary(
+            authority, **({"on_dispatch": on_dispatch} if on_dispatch else {})
+        )
+    )
 
 
 def _certificate_output(info):
@@ -302,21 +310,27 @@ def _renewal_is_due(
     )
 
 
-def run_one_shot(mode: Mode, *, now: datetime | None = None):
+def run_one_shot(mode: Mode, *, now: datetime | None = None, evidence=None):
     """Run exactly one selected mode without scheduling or state-changing retry."""
 
     if mode not in MODES:
         raise ProductionRunError("Renewer mode is invalid")
     if mode in {"prepare", "install", "renew"}:
         try:
+            if evidence is not None:
+                evidence.stage = "lock"
             with _lifecycle_lock():
-                return _run_one_shot(mode, now=now)
+                return _run_one_shot(mode, now=now, evidence=evidence)
         except _LifecycleBusy:
+            if evidence is not None:
+                evidence.failure(reason=Reason.LOCK_BUSY)
             return {"mode": mode, "state": "busy", "renewal_complete": False}
-    return _run_one_shot(mode, now=now)
+    return _run_one_shot(mode, now=now, evidence=evidence)
 
 
-def _run_one_shot(mode: Mode, *, now: datetime | None = None):
+def _run_one_shot(mode: Mode, *, now: datetime | None = None, evidence=None):
+    if evidence is not None:
+        evidence.stage = "configuration"
     try:
         config = load_production_config()
     except Exception:
@@ -325,26 +339,58 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
         ) from None
     if mode == "renew" and config.renew_before_days >= config.authority.lifetime_days:
         raise ProductionRunError("Renewer stopped during configuration validation")
-    unifi = build_production_unifi_client(config.authority)
+    unifi = build_production_unifi_client(
+        config.authority,
+        **({"on_dispatch": evidence.executor_dispatch} if evidence else {}),
+    )
     try:
         if mode == "inspect":
-            state = unifi.inspect_current(config.policy)
-            return {
-                "mode": mode,
-                "certificate": _certificate_output(
-                    inspect_public_keystore_state(state).certificate
-                ),
-            }
-        if mode == "csr":
-            csr_pem = unifi.request_csr(config.policy)
-            return {
-                "mode": mode,
-                "csr": _csr_output(validate_requested_csr(csr_pem, config.policy)),
-            }
-        if mode == "renew":
+            if evidence is not None:
+                evidence.stage = "inspection"
             state = unifi.inspect_current(config.policy)
             certificate = inspect_public_keystore_state(state).certificate
+            if evidence is not None:
+                evidence.certificate = certificate
+                evidence.stage = "decision"
+                due = _renewal_is_due(certificate, config.renew_before_days, now=now)
+                evidence.success(
+                    Outcome.ATTENTION_DUE if due else Outcome.SUCCESS_NO_CHANGE,
+                    "Certificate renewal attention is due."
+                    if due
+                    else "Certificate is outside the renewal window.",
+                    renewal_due=due,
+                )
+            return {
+                "mode": mode,
+                "certificate": _certificate_output(certificate),
+            }
+        if mode == "csr":
+            if evidence is not None:
+                evidence.stage = "csr_generation"
+            csr_pem = unifi.request_csr(config.policy)
+            csr_info = validate_requested_csr(csr_pem, config.policy)
+            if evidence is not None:
+                evidence.confirm("csr")
+                evidence.success(Outcome.SUCCESS_PREPARED, "CSR validated.")
+            return {
+                "mode": mode,
+                "csr": _csr_output(csr_info),
+            }
+        if mode == "renew":
+            if evidence is not None:
+                evidence.stage = "inspection"
+            state = unifi.inspect_current(config.policy)
+            certificate = inspect_public_keystore_state(state).certificate
+            if evidence is not None:
+                evidence.stage = "decision"
+                evidence.certificate = certificate
             if not _renewal_is_due(certificate, config.renew_before_days, now=now):
+                if evidence is not None:
+                    evidence.success(
+                        Outcome.SUCCESS_NO_CHANGE,
+                        "Certificate is not due for renewal.",
+                        renewal_due=False,
+                    )
                 return {
                     "mode": mode,
                     "state": "renewal_not_due",
@@ -353,10 +399,15 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
                     "renew_before_days": config.renew_before_days,
                     "certificate": _certificate_output(certificate),
                 }
+            if evidence is not None:
+                evidence.target.renewal_due = True
+                evidence.certificate = None
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None
 
     install = mode in {"install", "renew"}
+    if evidence is not None:
+        evidence.stage = "configuration"
     try:
         opnsense = OPNsenseClient(
             config.opnsense_base_url,
@@ -382,10 +433,21 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
             minimum_remaining_days=(
                 config.renew_before_days if mode == "renew" else None
             ),
+            **({"evidence": evidence} if evidence is not None else {}),
         )
     except Exception:
         raise ProductionRunError(f"Renewer stopped during {mode}") from None
     output = _renewal_output(result, mode)
+    if evidence is not None:
+        evidence.success(
+            Outcome.SUCCESS_CHANGED if install else Outcome.SUCCESS_PREPARED,
+            (
+                "Certificate renewal verified by live HTTPS."
+                if install
+                else "Certificate issued and validated."
+            ),
+            renewal_due=True if mode == "renew" else None,
+        )
     if mode == "renew":
         output.update(
             renewal_due=True,
@@ -394,16 +456,57 @@ def _run_one_shot(mode: Mode, *, now: datetime | None = None):
     return output
 
 
-def main(argv=None) -> int:
-    arguments = sys.argv[1:] if argv is None else argv
-    if len(arguments) != 1 or arguments[0] not in MODES:
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise ValueError from None
+
+
+def _parse_arguments(arguments):
+    parser = _Parser(add_help=False, allow_abbrev=False, usage=argparse.SUPPRESS)
+    parser.add_argument("mode", choices=sorted(MODES))
+    parser.add_argument("--output", choices=["json"])
+    try:
+        parsed = parser.parse_args(arguments)
+    except (ValueError, SystemExit):
         print(
             "Usage: production_renewer.py {inspect|csr|prepare|install|renew}",
             file=sys.stderr,
         )
+        return None
+    return parsed
+
+
+def main(argv=None) -> int:
+    arguments = sys.argv[1:] if argv is None else argv
+    parsed = _parse_arguments(arguments)
+    if parsed is None:
         return 2
+    if parsed.output == "json":
+        evidence = RunEvidence(
+            {
+                "inspect": Operation.INSPECT,
+                "csr": Operation.GENERATE_CSR,
+                "prepare": Operation.SIGN_CSR,
+                "install": Operation.INSTALL,
+                "renew": Operation.RENEW_DUE,
+            }[parsed.mode]
+        )
+        try:
+            with (
+                open(os.devnull, "w", encoding="utf-8") as sink,
+                redirect_stdout(sink),
+                redirect_stderr(sink),
+            ):
+                legacy = run_one_shot(parsed.mode, evidence=evidence)
+        except Exception:
+            evidence.failure()
+            exit_code = 1
+        else:
+            exit_code = 75 if legacy.get("state") == "busy" else 0
+        print(evidence.finish())
+        return exit_code
     try:
-        result = run_one_shot(arguments[0])
+        result = run_one_shot(parsed.mode)
     except ProductionRunError as error:
         print(str(error), file=sys.stderr)
         return 1

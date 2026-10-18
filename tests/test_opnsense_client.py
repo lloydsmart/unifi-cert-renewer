@@ -771,3 +771,150 @@ def test_environment_paths_and_direct_credentials_cannot_redirect_fixed_names(
 
     expected = base64.b64encode(b"test-api-key:test-api-secret").decode("ascii")
     assert authorization == f"Basic {expected}"
+
+
+def test_signing_callback_stays_clear_of_local_failures(monkeypatch, rsa_4096_csr):
+    """Exercise sign_csr -> _request_json -> _open_url, not only the transport helper."""
+    from csr import MAX_CSR_PEM_BYTES
+    from run_result import Milestone, RunEvidence
+
+    csr_pem, info = rsa_4096_csr
+    client = opnsense_client.OPNsenseClient(BASE_URL)
+    arguments = dict(
+        expected_spki_sha256=info.spki_sha256,
+        caref=CA_REF,
+        digest="sha256",
+        lifetime_days=30,
+        description="UniFi HTTPS",
+    )
+
+    def assert_no_dispatch(pem, *, exception, override=None, patch=None):
+        evidence = RunEvidence("sign_csr")
+        events = []
+        with monkeypatch.context() as local:
+            local.setattr(
+                opnsense_client,
+                "build_opener",
+                lambda *handlers: (
+                    events.append("opener") or pytest.fail("opener must not be built")
+                ),
+            )
+            if patch is not None:
+                patch(local)
+            with pytest.raises(exception):
+                client.sign_csr(
+                    pem,
+                    info,
+                    before_transport=evidence.signing_dispatch,
+                    **(arguments | (override or {})),
+                )
+        assert evidence.target.milestones["issuance"] is Milestone.NOT_ATTEMPTED
+        assert events == []
+
+    assert_no_dispatch(
+        csr_pem,
+        exception=opnsense_client.OPNsenseAPIError,
+        override={"caref": "invalid"},
+    )
+    assert_no_dispatch(b"x" * (MAX_CSR_PEM_BYTES + 1), exception=ValueError)
+
+    def break_json(local):
+        local.setattr(
+            opnsense_client.json,
+            "dumps",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("local JSON failure")),
+        )
+
+    assert_no_dispatch(csr_pem, exception=RuntimeError, patch=break_json)
+
+    def break_request(local):
+        local.setattr(
+            opnsense_client,
+            "Request",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                RuntimeError("local Request failure")
+            ),
+        )
+
+    assert_no_dispatch(csr_pem, exception=RuntimeError, patch=break_request)
+
+    evidence = RunEvidence("sign_csr")
+    events = []
+    with monkeypatch.context() as local:
+        local.setattr(
+            opnsense_client,
+            "build_opener",
+            lambda *handlers: (
+                events.append("opener")
+                or (_ for _ in ()).throw(RuntimeError("local opener failure"))
+            ),
+        )
+        with pytest.raises(RuntimeError, match="local opener failure"):
+            client.sign_csr(
+                csr_pem, info, before_transport=evidence.signing_dispatch, **arguments
+            )
+    assert events == ["opener"]
+    assert evidence.target.milestones["issuance"] is Milestone.NOT_ATTEMPTED
+
+
+@pytest.mark.parametrize("transport_fails", [True, False])
+def test_signing_callback_at_real_opener_transport(
+    monkeypatch, rsa_4096_csr, transport_fails
+):
+    from run_result import Change, Milestone, RunEvidence
+
+    csr_pem, info = rsa_4096_csr
+    client = opnsense_client.OPNsenseClient(BASE_URL)
+    evidence = RunEvidence("sign_csr")
+    events = []
+    requests = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            events.append("open")
+            requests.append((request, timeout))
+            if transport_fails:
+                raise URLError("synthetic transport failure")
+            return json_response({"result": "saved", "uuid": CERTIFICATE_UUID})
+
+    def build(*handlers):
+        events.append("opener")
+        assert any(isinstance(item, ProxyHandler) for item in handlers)
+        assert any(
+            isinstance(item, opnsense_client.RejectRedirectHandler) for item in handlers
+        )
+        assert any(isinstance(item, HTTPSHandler) for item in handlers)
+        return Opener()
+
+    monkeypatch.setattr(opnsense_client, "build_opener", build)
+
+    def before_transport():
+        events.append("dispatch")
+        evidence.signing_dispatch()
+
+    kwargs = dict(
+        expected_spki_sha256=info.spki_sha256,
+        caref=CA_REF,
+        digest="sha256",
+        lifetime_days=30,
+        description="UniFi HTTPS",
+        before_transport=before_transport,
+    )
+    if transport_fails:
+        with pytest.raises(opnsense_client.OPNsenseAPIError, match="connection failed"):
+            client.sign_csr(csr_pem, info, **kwargs)
+        assert evidence.target.milestones["issuance"] is Milestone.UNCERTAIN
+        assert evidence.target.change is Change.POSSIBLE
+    else:
+        assert client.sign_csr(csr_pem, info, **kwargs) == CERTIFICATE_UUID
+        assert evidence.target.milestones["issuance"] is Milestone.UNCERTAIN
+        evidence.confirm("issuance")  # The orchestration boundary after saved + UUID.
+        assert evidence.target.milestones["issuance"] is Milestone.CONFIRMED
+        assert evidence.target.change is Change.CONFIRMED
+    assert events == ["opener", "dispatch", "open"]
+    assert len(requests) == 1  # no retry or duplicate POST
+    request, timeout = requests[0]
+    assert request.full_url == BASE_URL + opnsense_client.CERT_ADD_PATH
+    assert request.get_method() == "POST"
+    assert timeout == client.timeout
+    assert json.loads(request.data)["cert"]["action"] == "sign_csr"

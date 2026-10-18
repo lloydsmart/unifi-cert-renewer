@@ -61,6 +61,7 @@ def run_to_installation(
     digest: str = "sha384",
     install: bool = False,
     minimum_remaining_days: int | None = None,
+    evidence=None,
 ) -> InstallationStageResult:
     """Inspect, issue, optionally install, verify live TLS, and finalise.
 
@@ -71,6 +72,8 @@ def run_to_installation(
 
     stage = "configuration validation"
     try:
+        if evidence is not None:
+            evidence.stage = "configuration"
         if type(install) is not bool:
             raise ValueError("install must be a boolean")
         if type(lifetime_days) is not int or not 1 <= lifetime_days <= 397:
@@ -84,13 +87,23 @@ def run_to_installation(
             trusted_ca_data, digest, issued_signature_oid
         )
         stage = "current UniFi inspection"
+        if evidence is not None:
+            evidence.stage = "inspection"
         before = unifi.inspect_current(policy)
         stage = "CSR generation and validation"
+        if evidence is not None:
+            evidence.stage = "csr_generation"
         csr_pem = unifi.request_csr(policy)
         csr_info = validate_requested_csr(csr_pem, policy)
+        if evidence is not None:
+            evidence.confirm("csr")
         stage = "OPNsense CA resolution"
+        if evidence is not None:
+            evidence.stage = "preflight"
         caref = opnsense.resolve_ca(ca_description)
         stage = "OPNsense signing; issuance may have occurred"
+        if evidence is not None:
+            evidence.stage = "signing"
         certificate_uuid = opnsense.sign_csr(
             csr_pem,
             csr_info,
@@ -99,8 +112,17 @@ def run_to_installation(
             digest=digest,
             lifetime_days=lifetime_days,
             description=certificate_description,
+            **(
+                {"before_transport": evidence.signing_dispatch}
+                if evidence is not None
+                else {}
+            ),
         )
+        if evidence is not None:
+            evidence.confirm("issuance")
         stage = "issued public certificate retrieval"
+        if evidence is not None:
+            evidence.stage = "issued_validation"
         issued = opnsense.get_certificate(certificate_uuid)
         stage = "issued certificate and installation validation"
         validation_time = _current_time()
@@ -123,11 +145,23 @@ def run_to_installation(
         ):
             raise ValueError("issued certificate remains in renewal window")
         if not install:
+            if evidence is not None:
+                evidence.certificate = plan.issued
             return InstallationStageResult("prepared", request, plan, None)
+        if evidence is not None:
+            evidence.certificate = plan.issued
+            evidence.stage = "installation"
         stage = "UniFi installation or verification; keystore may have changed"
         installed = unifi.install_certificate(request)
+        if evidence is not None:
+            evidence.confirm("installation")
         stage = "trusted live UniFi TLS verification"
+        if evidence is not None:
+            evidence.stage = "live_verification"
         unifi.verify_pending()
+        if evidence is not None:
+            evidence.confirm("activation")
+            evidence.confirm("live_tls")
         return InstallationStageResult("renewal_complete", request, plan, installed)
     except Exception:
         raise RenewalStageError(f"Renewal stopped during {stage}") from None

@@ -8,6 +8,7 @@ import socket
 import stat
 import struct
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 
 from renewal_policy import load_policy
@@ -138,11 +139,14 @@ def _read_message(connection):
         raise ValueError from None
 
 
-def _write_message(connection, value):
+def _write_message(connection, value, *, before_send=None):
     data = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii")
     if len(data) > MAX_MESSAGE_BYTES:
         raise ValueError
-    connection.sendall(struct.pack("!I", len(data)) + data)
+    frame = struct.pack("!I", len(data)) + data
+    if before_send is not None:
+        before_send()
+    connection.sendall(frame)
 
 
 def _request(operation, arguments):
@@ -183,10 +187,14 @@ def _validate_socket_directory():
 class SocketUnifiExecutionBoundary:
     """Expose only the five fixed public executor operations to the renewer."""
 
-    def __init__(self, policy=None):
+    def __init__(
+        self, policy=None, *, on_dispatch: Callable[[str], None] | None = None
+    ):
         self._policy = load_policy() if policy is None else policy
         self._exclusive = False
         self._installed = None
+        if on_dispatch is not None:
+            self._on_dispatch = on_dispatch
 
     def _call(self, operation, arguments):
         request = _request(operation, arguments)
@@ -206,7 +214,16 @@ class SocketUnifiExecutionBoundary:
             after = os.stat(SOCKET_PATH, follow_symlinks=False)
             if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
                 raise ValueError
-            _write_message(connection, request)
+            _write_message(
+                connection,
+                request,
+                before_send=(
+                    (lambda: self._on_dispatch(operation))
+                    if operation in {"install", "verify_pending"}
+                    and hasattr(self, "_on_dispatch")
+                    else None
+                ),
+            )
             return _decode_response(_read_message(connection))
         except Exception:
             raise UnifiOperationError("UniFi executor request failed") from None

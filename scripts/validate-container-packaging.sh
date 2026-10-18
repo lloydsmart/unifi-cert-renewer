@@ -9,6 +9,13 @@ fi
 
 renewer_image=$1
 unifi_image=$2
+repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+if grep -Fq 'src/run_result.py' "$repository_root/deployment/renewer/Dockerfile" &&
+    ! grep -Fxq '!src/run_result.py' "$repository_root/.dockerignore"; then
+    printf '%s\n' 'Renewer run_result.py is excluded from the Docker build context.' >&2
+    exit 1
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     printf '%s\n' 'Docker is required but is not available on PATH.' >&2
@@ -39,6 +46,7 @@ docker run --rm \
         test "$(id -u):$(id -g)" = "1000:1000"
         test -f /opt/unifi-cert-renewer/src/unifi_executor_client.py
         test -f /opt/unifi-cert-renewer/src/renewal_policy.py
+        test -f /opt/unifi-cert-renewer/src/run_result.py
         test -f /opt/unifi-cert-renewer/src/unifi_tls.py
         test -f /opt/unifi-cert-renewer/src/unifi_executor_service.py
         test ! -e /opt/unifi-cert-renewer/src/unifi_executor.py
