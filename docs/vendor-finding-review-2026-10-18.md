@@ -44,7 +44,7 @@ exceptions; neither transfers an earlier acceptance or advisory identity.
 
 ### Spring MVC applicability
 
-**CVE-2026-47884 — XSLT view rendering**
+#### CVE-2026-47884 — XSLT view rendering
 
 The affected Spring framework functionality is present. Static analysis did
 not demonstrate a UniFi XsltView resolver/configuration or a qualifying
@@ -52,7 +52,7 @@ catch-all handler performing implicit view-name rendering. Dynamic context
 and bean registration, profiles, reflection, and indirect configuration
 remain unverified.
 
-**CVE-2026-47890 — SSE view-fragment rendering**
+#### CVE-2026-47890 — SSE view-fragment rendering
 
 The affected Spring framework functionality is present. Static analysis did
 not demonstrate a UniFi SSE view-fragment pathway carrying attacker-controlled
