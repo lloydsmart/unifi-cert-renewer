@@ -683,18 +683,17 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-10-04 Lloyd Smart, as owner and reviewer, renewed 29 exact inherited
-vendor-image findings and separately approved `CVE-2026-68494` after the
-scanner changed its identifier from `GHSA-r7wm-3cxj-wff9`. The retired GHSA
-exception is no longer active; its earlier review remains historical evidence.
-The current temporary acceptance covers 30 findings: 23 HIGH and 7 CRITICAL.
+On 2026-10-18 Lloyd Smart, as owner and reviewer, renewed 30 exact inherited
+vendor-image findings and separately approved Spring WebMVC findings
+`CVE-2026-47884` and `CVE-2026-47890`. The current temporary acceptance covers
+32 findings: 23 HIGH and 9 CRITICAL.
 The [exception registry](.security/container-exceptions.json) scopes each record
 to Linux amd64, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
 and its exact scanner package, installed version, path, advisory, severity, and
 fix text. Acceptance does not transfer to another digest, platform, package
 identity, advisory alias, or introduced finding. The exceptions expire at
-**00:00 UTC on 2026-10-12**; the scanner fails closed after expiry, with no
+**00:00 UTC on 2026-10-25**; the scanner fails closed after expiry, with no
 automatic extension.
 
 The [30 September finding review](docs/vendor-finding-review-2026-09-30.md)
@@ -725,6 +724,13 @@ The [4 October decision](docs/vendor-finding-review-2026-10-04.md) records the
 3 October requalification, retention of `ls147`, expiry renewal, and fresh
 acceptance of the exact CVE scanner identity. The reported LAN/VPN restriction
 has not been independently verified and does not establish non-exploitability.
+
+The [18 October decision](docs/vendor-finding-review-2026-10-18.md) records the
+seven-day renewal, the two new exact Spring WebMVC findings, the maintainer's
+confirmation that management, guest-portal, and device-facing endpoints remain
+restricted to internal networks, and the remaining applicability uncertainty.
+It also distinguishes the fresh local diagnostic comparison from full GitHub
+CI qualification.
 
 The operator reports management, guest-portal, and device-facing endpoints
 restricted to trusted LAN/VPN users and devices. This was not independently

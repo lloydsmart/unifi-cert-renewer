@@ -114,6 +114,18 @@ docker run --rm \
             fi
             printf "Validated UniFi %s=%s\n" "$package" "$version"
         done
+        for package in curl libcurl4t64; do
+            status=$(dpkg-query -W -f="\${db:Status-Status}" "$package")
+            test "$status" = installed
+            version=$(dpkg-query -W -f="\${Version}" "$package")
+            if ! dpkg --validate-version "$version" ||
+                ! dpkg --compare-versions "$version" ge 8.18.0-1ubuntu2.8; then
+                printf "UniFi %s version %s is below the Ubuntu security fix.\n" \
+                    "$package" "$version" >&2
+                exit 1
+            fi
+            printf "Validated UniFi %s=%s\n" "$package" "$version"
+        done
     '
 
 printf '%s\n' 'Validated renewer and UniFi image packaging boundaries'

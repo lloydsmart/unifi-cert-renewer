@@ -402,10 +402,10 @@ def test_current_unifi_exception_registry_matches_approved_review():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 10, 4))
+    entries = comparator.load_exceptions(registry, today=date(2026, 10, 18))
     identifiers = {entry.identifier for entry in entries}
 
-    assert len(entries) == len(identifiers) == 30
+    assert len(entries) == len(identifiers) == 32
     assert identifiers == {
         *(f"EX-UNIFI-20260926-{number:03d}" for number in range(2, 26)),
         "EX-UNIFI-20260930-026",
@@ -414,9 +414,11 @@ def test_current_unifi_exception_registry_matches_approved_review():
         "EX-UNIFI-20261002-029",
         "EX-UNIFI-20261002-030",
         "EX-UNIFI-20261004-031",
+        "EX-UNIFI-20261018-032",
+        "EX-UNIFI-20261018-033",
     }
     assert sum(entry.finding.severity == "HIGH" for entry in entries) == 23
-    assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 7
+    assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 9
     for entry in entries:
         assert entry.upstream_image == (
             "lscr.io/linuxserver/unifi-network-application@sha256:"
@@ -424,8 +426,8 @@ def test_current_unifi_exception_registry_matches_approved_review():
         )
         assert entry.platform == "linux/amd64"
         assert entry.owner == entry.reviewed_by == "Lloyd Smart"
-        assert entry.reviewed_on == date(2026, 10, 4)
-        assert entry.expires_on == date(2026, 10, 12)
+        assert entry.reviewed_on == date(2026, 10, 18)
+        assert entry.expires_on == date(2026, 10, 25)
         assert entry.tracking_url == (
             "https://github.com/lloydsmart/unifi-cert-renewer/issues/63"
         )
@@ -486,15 +488,34 @@ def test_current_unifi_exception_registry_matches_approved_review():
             "severity": "HIGH",
             "fixed_version": fixed_version,
         }
+    for identifier, vulnerability_id in (
+        ("EX-UNIFI-20261018-032", "CVE-2026-47884"),
+        ("EX-UNIFI-20261018-033", "CVE-2026-47890"),
+    ):
+        entry = next(entry for entry in entries if entry.identifier == identifier)
+        assert asdict(entry.finding) == {
+            "identity": {
+                "result_class": "lang-pkgs",
+                "result_type": "jar",
+                "target": "Java",
+                "vulnerability_id": vulnerability_id,
+                "package_name": "org.springframework:spring-webmvc",
+                "package_id": "",
+                "package_path": "usr/lib/unifi/lib/local/spring-webmvc-6.2.18.jar",
+                "installed_version": "6.2.18",
+            },
+            "severity": "CRITICAL",
+            "fixed_version": "7.0.9",
+        }
     with pytest.raises(comparator.InvalidReportError, match="expired"):
-        comparator.load_exceptions(registry, today=date(2026, 10, 12))
+        comparator.load_exceptions(registry, today=date(2026, 10, 25))
 
 
 def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 10, 11))
+    entries = comparator.load_exceptions(registry, today=date(2026, 10, 24))
     assert all(entry.finding.fixed_version for entry in entries)
     comparison = comparator.Comparison(
         inherited=tuple(entry.finding for entry in entries),
@@ -504,7 +525,7 @@ def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
     accepted = comparator.apply_exceptions(
         comparison, entries, entries[0].upstream_image, PLATFORM
     )
-    assert len(accepted.accepted) == 30
+    assert len(accepted.accepted) == 32
     assert not accepted.blocked
 
     cve = next(
