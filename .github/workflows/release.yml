@@ -356,7 +356,7 @@ jobs:
 
       - name: Upload exact release candidate
         id: candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-candidate/
@@ -531,7 +531,7 @@ jobs:
 
       - name: Stage release SBOM assets
         id: sboms
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-sboms
           path: ${{ runner.temp }}/release-sboms/*.spdx.json
