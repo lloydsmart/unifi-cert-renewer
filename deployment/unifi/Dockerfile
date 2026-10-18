@@ -6,11 +6,19 @@ FROM ${UNIFI_IMAGE}
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates python3 python3-venv \
     && apt-get install --no-install-recommends --only-upgrade -y \
-        libssl3t64 openssl openssl-provider-legacy \
+        libssl3t64 openssl openssl-provider-legacy curl libcurl4t64 \
     && for package in libssl3t64 openssl openssl-provider-legacy; do \
         dpkg --compare-versions \
             "$(dpkg-query -W -f='${Version}' "$package")" \
             ge 3.5.5-1ubuntu3.6 || exit 1; \
+       done \
+    && for package in curl libcurl4t64; do \
+        status=$(dpkg-query -W -f='${db:Status-Status}' "$package") \
+            && test "$status" = installed \
+            && version=$(dpkg-query -W -f='${Version}' "$package") \
+            && dpkg --validate-version "$version" \
+            && dpkg --compare-versions "$version" ge 8.18.0-1ubuntu2.8 \
+            || exit 1; \
        done \
     && python3 -m venv /opt/unifi-cert-renewer/venv \
     && apt-get clean \
