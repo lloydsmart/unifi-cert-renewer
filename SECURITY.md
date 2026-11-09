@@ -607,8 +607,9 @@ with an available fix also block unless an exact, explicitly reviewed,
 unexpired exception applies. Unfixed inherited findings remain visible for
 impact review. Missing or invalid policy inputs fail closed. The
 [common image policy](docs/container-image-policy.md) defines exact matching,
-review metadata, and the maximum 90-day exception lifetime. The initial
-`.security/container-exceptions.json` registry contains no accepted risks.
+review metadata, and the maximum 90-day exception lifetime. The
+`.security/container-exceptions.json` registry records only the exact temporary
+decisions described under Current Accepted Risks.
 
 Supervised pre-release validation may identify local builds by exact image ID.
 Once container publishing exists, released production deployment must use the
@@ -683,64 +684,56 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-10-18 Lloyd Smart, as owner and reviewer, renewed 30 exact inherited
-vendor-image findings and separately approved Spring WebMVC findings
-`CVE-2026-47884` and `CVE-2026-47890`. The current temporary acceptance covers
-32 findings: 23 HIGH and 9 CRITICAL.
+On 2026-11-09 Lloyd Smart, as owner and reviewer, explicitly approved all
+38 exact inherited UniFi Java findings: **27 HIGH and 11 CRITICAL**. This renews
+the 32 records that expired on 25 October and adds six individually reviewed
+findings. The approval expressly includes the unknown production MongoDB
+Snappy configuration and its remaining availability risk.
+
 The [exception registry](.security/container-exceptions.json) scopes each record
-to Linux amd64, the exact `10.6.106-ls147` upstream index digest
+to `linux/amd64`, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
-and its exact scanner package, installed version, path, advisory, severity, and
-fix text. Acceptance does not transfer to another digest, platform, package
-identity, advisory alias, or introduced finding. The exceptions expire at
-**00:00 UTC on 2026-10-25**; the scanner fails closed after expiry, with no
+and its exact result class/type/target, advisory, package name/ID, installed
+version, path, scanner severity and fixed-version text. Acceptance does not
+transfer to another digest, platform, package identity, advisory alias or
+introduced finding. All 38 exceptions expire exclusively at
+**00:00 UTC on 2026-11-16**. The scanner fails closed at expiry; there is no
 automatic extension.
 
-The [30 September finding review](docs/vendor-finding-review-2026-09-30.md)
-records the original 26-finding decision and a separate subsequent review of
-Jackson Databind findings `CVE-2026-91776` and `CVE-2026-91777`. The former has positive
-UniFi name-based polymorphism/defaultImpl configuration evidence, but no
-demonstrated attacker-controlled route. The latter has no direct UniFi
-application annotation evidence, while indirect or runtime use remains
-unexcluded. LinuxServer `ls148` retains the same 146 UniFi JARs and the same
-current HIGH/CRITICAL identities, so it does not reduce this finding set. The earlier
-[26 September vendor-image review](docs/vendor-image-review-2026-09-26.md) and
-[17 September per-finding review](docs/vendor-finding-review-2026-09-17.md)
-remain historical evidence.
+The [9 November review and decision](docs/vendor-finding-review-2026-11-09.md)
+records the full accepted set, newer vendor-image comparisons and targeted
+Snappy investigation. The reviewed `10.6.106-ls151`, `10.6.109-ls152` and
+`10.6.109-ls153` images retain all 38 Java findings and identical hashes for
+the 14 affected libraries. Independently replacing bundled JARs remains
+unqualified. The earlier [18 October decision](docs/vendor-finding-review-2026-10-18.md)
+and its linked reviews remain historical evidence, not current approval.
 
-The [2 October finding review](docs/vendor-finding-review-2026-10-02.md)
-records the temporary acceptance of Jackson Core findings `CVE-2026-89407` and
-`CVE-2026-89425`. For the former, Jackson Databind directly calls the vulnerable
-numeric helper and UniFi uses Jackson, but its explicit Spring MVC mapper
-disables scalar coercion. No attacker-controlled vulnerable route was
-demonstrated; alternate mapper, runtime, and indirect paths remain unresolved.
-For the latter, the vulnerable `DataInput` parser capability is bundled, but
-the complete static review found no UniFi application reference to `DataInput`,
-`DataInputStream`, or Jackson's `DataInput` overload. Indirect, reflection,
-framework, and generated paths remain unresolved, so this is not proof of
-non-applicability.
+For `CVE-2026-108106`, the observed inform path validates compressed input
+before allocation and limits incoming requests to 10 MiB. Valid compressed
+input can still expand substantially outside the default-key output cap.
+The MongoDB driver's configured compressor list defaults to empty and rejects
+Snappy when it is absent; however, the live configuration remains **unknown**.
+If Snappy is configured, bounded offline tests confirm that its internal
+allocation occurs before the driver's destination limit can protect it.
+The operator explicitly accepted this uncertainty; no disabled production
+Snappy setting, verified database trust boundary or new mitigation is claimed.
 
-The [4 October decision](docs/vendor-finding-review-2026-10-04.md) records the
-3 October requalification, retention of `ls147`, expiry renewal, and fresh
-acceptance of the exact CVE scanner identity. The reported LAN/VPN restriction
-has not been independently verified and does not establish non-exploitability.
+Check the effective MongoDB compressor list as soon as server access is
+available and before expiry, including `MONGO_CONNECTION_OVERRIDE` precedence
+over `db.mongo.uri`. Report only compressor names/status, not credentials or
+connection strings. If Snappy is configured, reopen the risk decision
+immediately and assess a separately authorised mitigation or vendor fix.
 
-The [18 October decision](docs/vendor-finding-review-2026-10-18.md) records the
-seven-day renewal, the two new exact Spring WebMVC findings, the maintainer's
-confirmation that management, guest-portal, and device-facing endpoints remain
-restricted to internal networks, and the remaining applicability uncertainty.
-It also distinguishes the fresh local diagnostic comparison from full GitHub
-CI qualification.
-
-The operator reports management, guest-portal, and device-facing endpoints
-restricted to trusted LAN/VPN users and devices. This was not independently
-verified and is context, not an advisory-specific mitigation. Malicious
-or compromised permitted clients, devices, peers, and stored content remain
-residual risks. Prefer a vendor-supported fixed image. Re-review on upstream,
-package, platform, exposure, scanner identity, or applicability change and
-before expiry. [Issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63)
-tracks remediation. This temporary risk acceptance is not remediation, proof of
-non-exploitability, or deployment approval.
+On 9 November the operator confirmed that management, guest-portal and
+device-facing endpoints remain restricted to internal LAN/VPN networks, with
+no known incident. These reports were not independently verified. Malicious
+or compromised permitted clients, devices, peers and stored content remain
+residual risks. No finding is declared inapplicable or non-exploitable.
+Prefer a vendor-fixed bundle and remove exceptions when no longer needed.
+Re-review immediately on image, package, platform, exposure, scanner identity,
+applicability or incident changes, and before expiry.
+[Issue #63](https://github.com/lloydsmart/unifi-cert-renewer/issues/63) tracks
+remediation. This risk acceptance is not remediation or deployment approval.
 
 ## Security Review Triggers
 

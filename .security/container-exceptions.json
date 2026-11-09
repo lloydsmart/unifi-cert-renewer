@@ -21,12 +21,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted polymorphic type IDs to reach generic type resolution with an approved outer container. UniFi polymorphic typing, validator configuration, and gadget reachability remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted polymorphic type IDs to reach generic type resolution with an approved outer container. UniFi polymorphic typing, validator configuration, and gadget reachability remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-003",
@@ -48,12 +48,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted array type IDs to reach a validator permitting array subtypes without checking elements. UniFi use of allowIfSubTypeIsArray with attacker-controlled type IDs remains unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted array type IDs to reach a validator permitting array subtypes without checking elements. UniFi use of allowIfSubTypeIsArray with attacker-controlled type IDs remains unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-004",
@@ -75,12 +75,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require attacker HTML to reach a sanitizer policy permitting noscript and style with text inside style, then render in a browser. UniFi sanitizer policy and the browser rendering path remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require attacker HTML to reach a sanitizer policy permitting noscript and style with text inside style, then render in a browser. UniFi sanitizer policy and the browser rendering path remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-005",
@@ -102,12 +102,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP messages with excessive headers to reach the affected HTTP/1 parser. UniFi use of that parser path and its effective header limits remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP messages with excessive headers to reach the affected HTTP/1 parser. UniFi use of that parser path and its effective header limits remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-006",
@@ -129,12 +129,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP/2 HPACK blocks to reach the decoder before settings acknowledgement applies limits. UniFi HTTP/2 use, peer trust, and limit timing remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP/2 HPACK blocks to reach the decoder before settings acknowledgement applies limits. UniFi HTTP/2 use, peer trust, and limit timing remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-007",
@@ -156,12 +156,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP/2 headers to reach servlet code without expected protocol validation. The affected UniFi HTTP/2 application path remains unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted HTTP/2 headers to reach servlet code without expected protocol validation. The affected UniFi HTTP/2 application path remains unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. New static evidence: UniFi conditionally registers HTTP/2 in its connector helper. This supports possible feature use, not a demonstrated vulnerable runtime request path.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-008",
@@ -183,12 +183,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a request for an unknown realm user to reach Tomcat DIGEST authentication. UniFi DIGEST configuration and the relevant realm remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a request for an unknown realm user to reach Tomcat DIGEST authentication. UniFi DIGEST configuration and the relevant realm remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-009",
@@ -210,12 +210,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require requests to reach overlapping method constraints for the same extension pattern. UniFi constraint configuration and authorization coverage remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require requests to reach overlapping method constraints for the same extension pattern. UniFi constraint configuration and authorization coverage remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-010",
@@ -237,12 +237,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a longer path constraint to precede a more restrictive sub-path constraint. UniFi constraint ordering and alternate authorization controls remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a longer path constraint to precede a more restrictive sub-path constraint. UniFi constraint ordering and alternate authorization controls remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-011",
@@ -264,12 +264,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a captured DIGEST request to satisfy a boundary nonce-count window. UniFi DIGEST use and attacker access to an authenticated request remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a captured DIGEST request to satisfy a boundary nonce-count window. UniFi DIGEST use and attacker access to an authenticated request remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-012",
@@ -291,12 +291,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require FORM login redirects to interact with different POST and GET authorization. UniFi FORM authentication and per-method constraints remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require FORM login redirects to interact with different POST and GET authorization. UniFi FORM authentication and per-method constraints remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-013",
@@ -318,12 +318,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted LOCK or PROPFIND request bodies to reach an enabled WebDAV servlet. No WebDAV mapping was found in bundled web.xml; runtime registration remains unexcluded.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted LOCK or PROPFIND request bodies to reach an enabled WebDAV servlet. No WebDAV mapping was found in bundled web.xml; runtime registration remains unexcluded.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-014",
@@ -345,12 +345,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require an authenticated outgoing WebSocket request to follow a cross-host redirect. UniFi use of the affected client and attacker influence over redirect targets remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require an authenticated outgoing WebSocket request to follow a cross-host redirect. UniFi use of the affected client and attacker influence over redirect targets remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-015",
@@ -372,12 +372,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require case variants of a username to reach a case-insensitive backing realm behind LockOutRealm. The UniFi realm chain and case handling remain unproved; a login page alone does not establish this configuration.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require case variants of a username to reach a case-insensitive backing realm behind LockOutRealm. The UniFi realm chain and case handling remain unproved; a login page alone does not establish this configuration.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-016",
@@ -399,12 +399,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require an attacker-controlled PostgreSQL server to supply an excessive SCRAM iteration count. UniFi use of the bundled JDBC driver and its reachable database endpoints remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require an attacker-controlled PostgreSQL server to supply an excessive SCRAM iteration count. UniFi use of the bundled JDBC driver and its reachable database endpoints remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-017",
@@ -426,12 +426,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a TLS-intercepting peer to supply a certificate algorithm with no channel-binding hash. UniFi JDBC use, channelBinding=require, TLS trust, and interception feasibility remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require a TLS-intercepting peer to supply a certificate algorithm with no channel-binding hash. UniFi JDBC use, channelBinding=require, TLS trust, and interception feasibility remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-018",
@@ -453,12 +453,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted property strings to reach MappingContext against nested models or many invalid paths. UniFi callers, accepted property paths, and effective input limits remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted property strings to reach MappingContext against nested models or many invalid paths. UniFi callers, accepted property paths, and effective input limits remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-019",
@@ -480,12 +480,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require HTTP-supplied names to reach unfiltered PropertyPath lookups or affected web bindings. UniFi Querydsl or projected-payload binding use and filtering remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require HTTP-supplied names to reach unfiltered PropertyPath lookups or affected web bindings. UniFi Querydsl or projected-payload binding use and filtering remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-020",
@@ -507,12 +507,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted input to reach an annotated MongoDB query with a capture-all placeholder. Affected UniFi Query or Aggregation annotations and endpoint-to-query binding remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted input to reach an annotated MongoDB query with a capture-all placeholder. Affected UniFi Query or Aggregation annotations and endpoint-to-query binding remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-021",
@@ -534,12 +534,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require user-controlled expressions to reach the SpEL evaluator. UniFi evaluation of untrusted expressions and its restrictions remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require user-controlled expressions to reach the SpEL evaluator. UniFi evaluation of untrusted expressions and its restrictions remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-022",
@@ -561,12 +561,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require requests to reach filesystem resources with versioned-resource support enabled. UniFi static-resource configuration and exposure remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require requests to reach filesystem resources with versioned-resource support enabled. UniFi static-resource configuration and exposure remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-023",
@@ -588,12 +588,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted text to be escaped by JavaScriptUtils and embedded in browser JavaScript. UniFi escaping call sites and output context remain unproved.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted text to be escaped by JavaScriptUtils and embedded in browser JavaScript. UniFi escaping call sites and output context remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-024",
@@ -615,12 +615,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted certificates to reach Bouncy Castle PKIX certificate-path or name-constraint validation. Bouncy Castle 1.84 is registered and used, but no direct non-Bouncy-Castle application reference to the affected validator was found; standard JCA CertPathValidator use exists. Reflection or dynamic provider selection remains unexcluded.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination. Bouncy Castle is genuinely used, but the affected PKIX route is unproved.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted certificates to reach Bouncy Castle PKIX certificate-path or name-constraint validation. Bouncy Castle 1.84 is registered and used, but no direct non-Bouncy-Castle application reference to the affected validator was found; standard JCA CertPathValidator use exists. Reflection or dynamic provider selection remains unexcluded.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior review established Bouncy Castle registration/use and JCA certificate-path API use; no direct application reference to the affected validator. Dynamic provider selection remains possible.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260926-025",
@@ -642,12 +642,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted ASN.1 input to reach the affected Bouncy Castle parsing classes. Bouncy Castle ASN.1, certificate, and PEM APIs are genuinely used. No direct non-Bouncy-Castle application reference to ASN1InputStream, LazyEncodedSequence, or X509CRLHolder was found; indirect parsing remains possible.",
-      "reason": "Temporary acceptance after fresh 2026-09-30 scanner and applicability review for the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. This record retains its exact scanner identity and FixedVersion. The ls148 image has the same 146 UniFi JARs and the same 26 HIGH/CRITICAL findings; no vendor-supported fixed bundle resolves this set. The finding-specific UniFi route or configuration remains uncertain, so this is not a non-exploitability determination. Bouncy Castle is genuinely used, and indirect affected ASN.1 parsing remains possible.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported LAN/VPN restriction; malicious or compromised permitted clients, devices, peers, or stored content remain residual risks. Prefer a vendor-supported fixed image; do not independently replace bundled JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require untrusted ASN.1 input to reach the affected Bouncy Castle parsing classes. Bouncy Castle ASN.1, certificate, and PEM APIs are genuinely used. No direct non-Bouncy-Castle application reference to ASN1InputStream, LazyEncodedSequence, or X509CRLHolder was found; indirect parsing remains possible.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior review established use of Bouncy Castle ASN.1/certificate/PEM APIs. Indirect use of affected parsers remains possible.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260930-026",
@@ -669,12 +669,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require attacker-controlled JSON string data to be bound by Jackson to javax.xml.datatype.Duration or XMLGregorianCalendar, potentially exhausting CPU or memory. Static review found the affected implementation but no direct UniFi application reference to those types and no concrete REST/API, inform, WebSocket, configuration-import, or persisted-data binding route. Dynamic binding, reflection, and runtime mapper configuration remain unexcluded.",
-      "reason": "New inherited HIGH finding identified in the fresh 2026-09-30 qualification of the exact 10.6.106-ls147 index digest sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a on linux/amd64. The finding is in bundled Jackson databind 2.21.2, JAR SHA-256 8c982f01f148d805f0aaac2339011244757e0df7c6ff8951f2fa3f433b8ed849. The ls148 image contains the byte-identical UniFi JAR payload and the same finding; no vendor-supported fixed bundle currently resolves it. No concrete UniFi exploit route was demonstrated, but reachability was not disproved. Acceptance is temporary and deliberately short.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the operator-reported restricted exposure; malicious or compromised permitted clients and devices remain a risk. Do not independently replace the bundled Jackson JAR. Prefer a vendor-supported fixed image. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Exploitation would require attacker-controlled JSON string data to be bound by Jackson to javax.xml.datatype.Duration or XMLGregorianCalendar, potentially exhausting CPU or memory. Static review found the affected implementation but no direct UniFi application reference to those types and no concrete REST/API, inform, WebSocket, configuration-import, or persisted-data binding route. Dynamic binding, reflection, and runtime mapper configuration remain unexcluded.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 30 September review found no direct UniFi XML Duration/XMLGregorianCalendar binding reference. Dynamic binding remains unexcluded.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260930-027",
@@ -696,12 +696,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "If permitted input reaches the relevant name-based polymorphic model, repeated distinct attacker-influenced type IDs may be retained for the process lifetime, causing heap growth, availability pressure, or an out-of-memory failure. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. Authentication and reachability of the relevant input route remain unproved.",
-      "reason": "Short exact acceptance of an inherited vendor JAR finding while awaiting a supported fixed image. UniFi contains the advisory-relevant name-based-polymorphism/defaultImpl configuration shape, but no concrete attacker-controlled path to the affected model or long-lived deserializer was established. Dynamic and indirect use remain possible. Independent Jackson JAR replacement is unqualified.",
-      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction; do not broaden management, guest-portal, or device exposure. Monitor upstream fixes and service memory. Do not independently replace bundled Jackson JARs. Re-review on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. If permitted input reaches the relevant name-based polymorphic model, repeated distinct attacker-influenced type IDs may be retained for the process lifetime, causing heap growth, availability pressure, or an out-of-memory failure. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. Authentication and reachability of the relevant input route remain unproved.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 30 September evidence found name-based polymorphic model annotations in UniFi WebSocket classes and Jackson HTTP converters. A concrete untrusted route remains unproved; treat this as a priority unresolved availability risk.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20260930-028",
@@ -723,12 +723,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "If attacker-influenced JSON reaches an identity-enabled collection or map, reverse-order unresolved object references may cause quadratic CPU work and exhaust request or worker capacity. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. No concrete affected UniFi input route was established.",
-      "reason": "Short exact acceptance of an inherited vendor JAR finding with unresolved UniFi reachability while awaiting a supported fixed image. Static review found no direct UniFi @JsonIdentityInfo reference, but runtime mix-ins, indirect framework use, and generated models were not excluded. Independent Jackson JAR replacement is unqualified.",
-      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction; do not broaden endpoint exposure. Prefer a vendor-supported fixed image. Do not independently replace bundled Jackson JARs. Re-review on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. If attacker-influenced JSON reaches an identity-enabled collection or map, reverse-order unresolved object references may cause quadratic CPU work and exhaust request or worker capacity. The operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified. No concrete affected UniFi input route was established.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 30 September review found no direct UniFi JsonIdentityInfo reference. Framework mixins and runtime binding remain unexcluded.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20261002-029",
@@ -750,12 +750,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Malicious or compromised permitted clients or devices could affect availability if a numeric-looking JSON string reaches an alternate Jackson mapper and numeric deserializer.",
-      "reason": "Short exact acceptance of an inherited HIGH finding in the pinned 10.6.106-ls147 Jackson Core 2.21.2 JAR while awaiting a vendor-supported fixed bundle. Bundled Jackson Databind directly calls NumberInput.looksLikeValidNumber from numeric deserializers, and UniFi uses Jackson for JSON input. UniFi's explicit Spring MVC mapper disables ALLOW_COERCION_OF_SCALARS, reducing the ordinary REST binding route, but other mappers, indirect binding, and runtime configuration were not excluded. No attacker-controlled route to the vulnerable helper was demonstrated. This is risk acceptance, not proof of non-exploitability.",
-      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction and do not broaden endpoint exposure. Monitor service CPU and request-worker exhaustion. Prefer a vendor-supported fixed UniFi image; do not replace bundled JARs independently. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Malicious or compromised permitted clients or devices could affect availability if a numeric-looking JSON string reaches an alternate Jackson mapper and numeric deserializer.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 2 October static evidence: the default REST mapper disables scalar coercion. Alternate mappers and runtime changes remain unexcluded.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20261002-030",
@@ -777,12 +777,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Malicious or compromised permitted sources remain a risk if their malformed input reaches a Jackson DataInput-backed parser.",
-      "reason": "Short exact acceptance of an inherited HIGH finding in the pinned 10.6.106-ls147 Jackson Core 2.21.2 JAR while awaiting a vendor-supported fixed bundle. The vulnerable DataInput parser is present, but the complete static JAR review found no UniFi application reference to DataInput, DataInputStream, or Jackson's DataInput parser overload. Observed UniFi JSON factory calls use InputStream, String, or byte arrays; Jackson Databind's own DataInput overloads establish capability only. Reflection, framework dispatch, generated code, and other indirect routes remain unexcluded. This is risk acceptance, not proof of non-exploitability.",
-      "mitigation": "Preserve and verify the operator-reported LAN/VPN restriction and do not broaden endpoint exposure. Monitor service memory and out-of-memory failures. Prefer a vendor-supported fixed UniFi image; do not replace bundled JARs independently. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operator reports management, guest-portal, and device-facing endpoints restricted to trusted LAN/VPN users and devices; this was not independently verified and is not an advisory-specific mitigation. Malicious or compromised permitted sources remain a risk if their malformed input reaches a Jackson DataInput-backed parser.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 2 October static evidence: no direct UniFi DataInput-backed parser use was found; InputStream, String and byte[] uses were observed. Dynamic or indirect use remains unexcluded.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20261004-031",
@@ -804,12 +804,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "Attacker controlled JSON must arrive in chunks at Jackson Core's nonblocking integer parser. UniFi use of that parser for untrusted streams has not been demonstrated or excluded. The operator reports management, guest portal, and device facing endpoints restricted to trusted LAN/VPN users and devices; this restriction has not been independently verified. Malicious or compromised permitted clients and devices remain relevant.",
-      "reason": "Temporary acceptance of the exact inherited HIGH `CVE-2026-68494` scanner finding in bundled Jackson Core 2.21.2, for the reviewed `ls147` upstream digest and `linux/amd64`. The CVE describes the flaw previously reviewed as `GHSA-r7wm-3cxj-wff9`, but its new exact scanner identity requires an independent owner decision. Neither reviewed vendor image fixes the finding. No affected UniFi input route has been demonstrated or excluded, and this is not a finding of nonexploitability.",
-      "mitigation": "No advisory specific mitigation has been verified. Preserve and verify the reported LAN/VPN restriction without treating it as a parser fix. Consider malicious or compromised permitted clients and devices. Prefer a vendor supported fixed UniFi image; do not replace bundled JARs independently without separate qualification. Re-review on changes to image, package, scanner identity, exposure, or applicability and before owner selected expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Attacker controlled JSON must arrive in chunks at Jackson Core's nonblocking integer parser. UniFi use of that parser for untrusted streams has not been demonstrated or excluded. The operator reports management, guest portal, and device facing endpoints restricted to trusted LAN/VPN users and devices; this restriction has not been independently verified. Malicious or compromised permitted clients and devices remain relevant.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The existing finding-specific condition and proof gaps remain unresolved. Exact scanner scope matches the expired entry. This is a reassessment of retained evidence, not a new runtime exploitability audit.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20261018-032",
@@ -831,12 +831,12 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "The affected Spring WebMVC component is bundled in UniFi. Management, guest-portal, and device-facing endpoints remain restricted to internal networks, but malicious or compromised permitted clients and devices remain relevant. No concrete affected UniFi route or effective configuration has been established or excluded.",
-      "reason": "Temporary exact acceptance of an inherited CRITICAL finding reported by the fresh scanner for the pinned 10.6.106-ls147 upstream digest on linux/amd64. Applicability and exploitability in UniFi remain uncertain; this record does not assert that the finding is inapplicable or non-exploitable.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the internal-only endpoint restriction and do not broaden exposure. Prefer a vendor-supported fixed UniFi image; do not independently replace bundled Spring JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. The affected Spring WebMVC component is bundled in UniFi. Management, guest-portal, and device-facing endpoints remain restricted to internal networks, but malicious or compromised permitted clients and devices remain relevant. No concrete affected UniFi route or effective configuration has been established or excluded.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 18 October static review found the affected XsltView implementation but no qualifying UniFi resolver/catch-all implicit-view route. Runtime profiles and dynamic registration were not established.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
     },
     {
       "identifier": "EX-UNIFI-20261018-033",
@@ -858,12 +858,174 @@
       },
       "owner": "Lloyd Smart",
       "reviewed_by": "Lloyd Smart",
-      "reviewed_on": "2026-10-18",
-      "expires_on": "2026-10-25",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
       "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
-      "exposure": "The affected Spring WebMVC component is bundled in UniFi. Management, guest-portal, and device-facing endpoints remain restricted to internal networks, but malicious or compromised permitted clients and devices remain relevant. No concrete affected UniFi route or effective configuration has been established or excluded.",
-      "reason": "Temporary exact acceptance of an inherited CRITICAL finding reported by the fresh scanner for the pinned 10.6.106-ls147 upstream digest on linux/amd64. Applicability and exploitability in UniFi remain uncertain; this record does not assert that the finding is inapplicable or non-exploitable.",
-      "mitigation": "No advisory-specific mitigation has been verified. Preserve the internal-only endpoint restriction and do not broaden exposure. Prefer a vendor-supported fixed UniFi image; do not independently replace bundled Spring JARs. Re-review immediately on upstream, package, platform, exposure, scanner identity, or applicability change and before expiry."
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. The affected Spring WebMVC component is bundled in UniFi. Management, guest-portal, and device-facing endpoints remain restricted to internal networks, but malicious or compromised permitted clients and devices remain relevant. No concrete affected UniFi route or effective configuration has been established or excluded.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. Prior 18 October static review found affected SSE fragment support but no qualifying UniFi route. Runtime registration remains unexcluded.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-034",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-102554",
+          "package_name": "com.google.guava:guava",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/guava-33.3.1-jre.jar",
+          "installed_version": "33.3.1-jre"
+        },
+        "severity": "HIGH",
+        "fixed_version": "33.7.2"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Untrusted native Java object deserialization instantiates affected Guava collections and trusts their declared sizes.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. No ObjectInputStream or SerializationUtils.deserialize method references found in com/ubnt or com/ubiquiti classes. No references to the named affected collection classes outside Guava were found; that absence is weak evidence because serialized class names need not appear in application code. Other namespaces, frameworks, reflection and runtime deserialization filters were not exhaustively traced. Ordinary JSON use alone does not establish this condition.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-035",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-55276",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "11.0.23, 10.1.56, 9.0.119"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Operational review relies on Tomcat generated effective-web.xml logs that omit some authorization details.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The primary advisory concerns incomplete logged configuration. It does not itself establish a request authorization bypass or code execution. No logEffectiveWebXml reference was found outside Tomcat core; runtime configuration and audit practice were not inspected. Retain scanner CRITICAL despite Apache Low.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-036",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-65637",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "CRITICAL",
+        "fixed_version": "11.0.25, 10.1.59, 9.0.121"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. HTTP/2 TLS requests without authority encounter a deployment relying on strict SNI/host validation.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. UniFi connector bytecode conditionally registers Http2Protocol. HTTP/2 cannot be dismissed as absent. No explicit strict-SNI configuration reference was found in the searched libraries; active connectors, TLS termination and host isolation remain unknown. Retain scanner CRITICAL despite Apache Moderate.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-037",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-53404",
+          "package_name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/tomcat-embed-core-10.1.54.jar",
+          "installed_version": "10.1.54"
+        },
+        "severity": "HIGH",
+        "fixed_version": "11.0.23, 10.1.56, 9.0.119"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. An enabled RewriteValve has an OR condition chain followed by a security-relevant non-OR condition.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. No RewriteValve or rewrite.config reference was found outside Tomcat core, and no such resource was found inside the 146 inspected JARs. Filesystem configuration, runtime registration and deployed configuration were not inspected. Retain scanner HIGH despite Apache Low.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-038",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-108106",
+          "package_name": "org.xerial.snappy:snappy-java",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/snappy-java-1.1.10.8.jar",
+          "installed_version": "1.1.10.8"
+        },
+        "severity": "HIGH",
+        "fixed_version": "1.1.10.9"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. The inform path caps input at 10 MiB, checks packet length, and validates compressed data before decompression; the default-auth-key branch also caps output at 10 MiB. Other valid compressed input can still expand substantially. Effective MongoDB Snappy configuration is UNKNOWN: the operator has not checked. If the client configures Snappy, a malicious or compromised database peer can reach an affected stream; ordinary inform traffic alone does not establish control of database replies.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. The 2026-11-09 follow-up used exact bundled libraries in bounded offline tests: inform validation rejected the malformed-length control before decompression, but MongoDB Snappy processing allocated about 1 MiB internally despite a 16-byte destination. Its size limits act too late if Snappy is configured. An empty configured compressor list rejects Snappy; the live list is unverified. Lloyd Smart explicitly accepted that unresolved MongoDB availability risk until expiry on 2026-11-09; neither absent Snappy nor safe production reachability is asserted.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal. Check the effective MongoDB compressor list as soon as server access is available and before expiry, including MONGO_CONNECTION_OVERRIDE precedence over db.mongo.uri, without disclosing connection strings or credentials. If Snappy is configured, reopen the risk decision immediately and assess a separately authorised client-compression mitigation or vendor fix. No such mitigation or production verification has occurred."
+    },
+    {
+      "identifier": "EX-UNIFI-20261109-039",
+      "upstream_image": "lscr.io/linuxserver/unifi-network-application@sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a",
+      "platform": "linux/amd64",
+      "finding": {
+        "identity": {
+          "result_class": "lang-pkgs",
+          "result_type": "jar",
+          "target": "Java",
+          "vulnerability_id": "CVE-2026-93451",
+          "package_name": "org.xerial.snappy:snappy-java",
+          "package_id": "",
+          "package_path": "usr/lib/unifi/lib/local/snappy-java-1.1.10.8.jar",
+          "installed_version": "1.1.10.8"
+        },
+        "severity": "HIGH",
+        "fixed_version": "1.1.10.9"
+      },
+      "owner": "Lloyd Smart",
+      "tracking_url": "https://github.com/lloydsmart/unifi-cert-renewer/issues/63",
+      "reviewed_by": "Lloyd Smart",
+      "reviewed_on": "2026-11-09",
+      "expires_on": "2026-11-16",
+      "exposure": "On 2026-11-09 the operator confirmed unchanged internal LAN/VPN restrictions for management, guest-portal and device-facing endpoints and no known incident. These reports were not independently verified; compromised permitted clients, devices, peers and stored content remain residual risks. Attacker-controlled compressed data reaches one of the typed uncompressChar/Short/Int/Long/Float/DoubleArray methods with a misaligned declared output length.",
+      "reason": "Explicitly approved by Lloyd Smart on 2026-11-09. Temporary acceptance for continued use of the qualified certificate-renewal integration while vendor remediation is unavailable. Fresh 2026-11-09 comparisons of 10.6.106-ls151, 10.6.109-ls152 and 10.6.109-ls153 retain all 38 Java findings and identical hashes for the 14 affected libraries. Individual JAR replacement is unqualified. This is not a non-exploitability determination. No method reference to the six affected typed-array APIs was found outside snappy-java in the 65,337 inspected classes. Observed UniFi and MongoDB uses were byte-array or stream operations, which do not establish this specific typed-array flaw. Reflection, generated code and other runtime loading remain unexcluded. The advisory describes heap corruption; do not downgrade it to a harmless exception or claim non-exploitability.",
+      "mitigation": "Preserve the operator-reported internal-network restrictions; no new deployment mitigation is claimed. Prefer a vendor-fixed bundle and remove this exception when no longer needed. Re-review immediately on image, package, platform, scanner identity, exposure, applicability or incident changes, and before the exclusive 2026-11-16 expiry. No automatic renewal. No external references to affected typed-array APIs were found in the inspected JARs; reflection and dynamic loading remain unexcluded. Do not treat the separate inform validation result as proof that every typed-array route is protected."
     }
   ]
 }

@@ -402,10 +402,10 @@ def test_current_unifi_exception_registry_matches_approved_review():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 10, 18))
+    entries = comparator.load_exceptions(registry, today=date(2026, 11, 9))
     identifiers = {entry.identifier for entry in entries}
 
-    assert len(entries) == len(identifiers) == 32
+    assert len(entries) == len(identifiers) == 38
     assert identifiers == {
         *(f"EX-UNIFI-20260926-{number:03d}" for number in range(2, 26)),
         "EX-UNIFI-20260930-026",
@@ -416,9 +416,10 @@ def test_current_unifi_exception_registry_matches_approved_review():
         "EX-UNIFI-20261004-031",
         "EX-UNIFI-20261018-032",
         "EX-UNIFI-20261018-033",
+        *(f"EX-UNIFI-20261109-{number:03d}" for number in range(34, 40)),
     }
-    assert sum(entry.finding.severity == "HIGH" for entry in entries) == 23
-    assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 9
+    assert sum(entry.finding.severity == "HIGH" for entry in entries) == 27
+    assert sum(entry.finding.severity == "CRITICAL" for entry in entries) == 11
     for entry in entries:
         assert entry.upstream_image == (
             "lscr.io/linuxserver/unifi-network-application@sha256:"
@@ -426,8 +427,8 @@ def test_current_unifi_exception_registry_matches_approved_review():
         )
         assert entry.platform == "linux/amd64"
         assert entry.owner == entry.reviewed_by == "Lloyd Smart"
-        assert entry.reviewed_on == date(2026, 10, 18)
-        assert entry.expires_on == date(2026, 10, 25)
+        assert entry.reviewed_on == date(2026, 11, 9)
+        assert entry.expires_on == date(2026, 11, 16)
         assert entry.tracking_url == (
             "https://github.com/lloydsmart/unifi-cert-renewer/issues/63"
         )
@@ -507,15 +508,90 @@ def test_current_unifi_exception_registry_matches_approved_review():
             "severity": "CRITICAL",
             "fixed_version": "7.0.9",
         }
+    for number, vulnerability_id, package, version, jar, severity, fixed in (
+        (
+            34,
+            "CVE-2026-102554",
+            "com.google.guava:guava",
+            "33.3.1-jre",
+            "guava-33.3.1-jre.jar",
+            "HIGH",
+            "33.7.2",
+        ),
+        (
+            35,
+            "CVE-2026-55276",
+            "org.apache.tomcat.embed:tomcat-embed-core",
+            "10.1.54",
+            "tomcat-embed-core-10.1.54.jar",
+            "CRITICAL",
+            "11.0.23, 10.1.56, 9.0.119",
+        ),
+        (
+            36,
+            "CVE-2026-65637",
+            "org.apache.tomcat.embed:tomcat-embed-core",
+            "10.1.54",
+            "tomcat-embed-core-10.1.54.jar",
+            "CRITICAL",
+            "11.0.25, 10.1.59, 9.0.121",
+        ),
+        (
+            37,
+            "CVE-2026-53404",
+            "org.apache.tomcat.embed:tomcat-embed-core",
+            "10.1.54",
+            "tomcat-embed-core-10.1.54.jar",
+            "HIGH",
+            "11.0.23, 10.1.56, 9.0.119",
+        ),
+        (
+            38,
+            "CVE-2026-108106",
+            "org.xerial.snappy:snappy-java",
+            "1.1.10.8",
+            "snappy-java-1.1.10.8.jar",
+            "HIGH",
+            "1.1.10.9",
+        ),
+        (
+            39,
+            "CVE-2026-93451",
+            "org.xerial.snappy:snappy-java",
+            "1.1.10.8",
+            "snappy-java-1.1.10.8.jar",
+            "HIGH",
+            "1.1.10.9",
+        ),
+    ):
+        entry = next(
+            entry
+            for entry in entries
+            if entry.identifier == f"EX-UNIFI-20261109-{number:03d}"
+        )
+        assert asdict(entry.finding) == {
+            "identity": {
+                "result_class": "lang-pkgs",
+                "result_type": "jar",
+                "target": "Java",
+                "vulnerability_id": vulnerability_id,
+                "package_name": package,
+                "package_id": "",
+                "package_path": f"usr/lib/unifi/lib/local/{jar}",
+                "installed_version": version,
+            },
+            "severity": severity,
+            "fixed_version": fixed,
+        }
     with pytest.raises(comparator.InvalidReportError, match="expired"):
-        comparator.load_exceptions(registry, today=date(2026, 10, 25))
+        comparator.load_exceptions(registry, today=date(2026, 11, 16))
 
 
 def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 10, 24))
+    entries = comparator.load_exceptions(registry, today=date(2026, 11, 15))
     assert all(entry.finding.fixed_version for entry in entries)
     comparison = comparator.Comparison(
         inherited=tuple(entry.finding for entry in entries),
@@ -525,7 +601,7 @@ def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
     accepted = comparator.apply_exceptions(
         comparison, entries, entries[0].upstream_image, PLATFORM
     )
-    assert len(accepted.accepted) == 32
+    assert len(accepted.accepted) == 38
     assert not accepted.blocked
 
     cve = next(
