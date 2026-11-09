@@ -1318,12 +1318,13 @@ def test_filesystem_detection_accepts_btrfs_anonymous_device(monkeypatch):
         "mnt_id:\t42\n",
         "42 1 8:1 /subvol /config/data rw - btrfs /dev/sda1 rw\n",
     )
-    monkeypatch.setattr(
-        filesystem.os,
-        "fstat",
-        lambda fd: SimpleNamespace(st_dev=os.makedev(0, 99)),
-    )
-    assert filesystem._filesystem(123) == "btrfs"
+    with monkeypatch.context() as filesystem_patch:
+        filesystem_patch.setattr(
+            filesystem.os,
+            "fstat",
+            lambda fd: SimpleNamespace(st_dev=os.makedev(0, 99)),
+        )
+        assert filesystem._filesystem(123) == "btrfs"
 
 
 def test_filesystem_detection_accepts_bind_mount(monkeypatch):
@@ -1333,12 +1334,13 @@ def test_filesystem_detection_accepts_bind_mount(monkeypatch):
         "12 1 8:1 / / rw - ext4 /dev/sda1 rw\n"
         "73 12 8:1 /appdata /config/data rw - xfs /dev/sdb1 rw\n",
     )
-    monkeypatch.setattr(
-        filesystem.os,
-        "fstat",
-        lambda fd: SimpleNamespace(st_dev=os.makedev(8, 1)),
-    )
-    assert filesystem._filesystem(123) == "xfs"
+    with monkeypatch.context() as filesystem_patch:
+        filesystem_patch.setattr(
+            filesystem.os,
+            "fstat",
+            lambda fd: SimpleNamespace(st_dev=os.makedev(8, 1)),
+        )
+        assert filesystem._filesystem(123) == "xfs"
 
 
 def test_filesystem_detection_accepts_dash_mount_source(monkeypatch):
