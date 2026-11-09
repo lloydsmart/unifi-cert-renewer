@@ -5,7 +5,10 @@ FROM python:3.14-slim-trixie@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2
 # The pinned upstream predates Trixie's CVE-2026-103111 PCRE2 security update.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends --only-upgrade \
+        apt=3.0.4 \
+        libapt-pkg7.0=3.0.4 \
         libpcre2-8-0=10.46-1~deb13u3 \
+        zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG UNRAID_ICON_REF=main

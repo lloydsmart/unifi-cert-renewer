@@ -6,6 +6,10 @@ FROM ${UNIFI_IMAGE}
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates python3 python3-venv \
     && apt-get install --no-install-recommends --only-upgrade -y \
+        apt=3.2.1ubuntu0.1 \
+        apt-utils=3.2.1ubuntu0.1 \
+        libapt-pkg7.0=3.2.1ubuntu0.1 \
+        libbrotli1=1.2.0-3ubuntu0.1 \
         libssl3t64 openssl openssl-provider-legacy curl libcurl4t64 \
     && for package in libssl3t64 openssl openssl-provider-legacy; do \
         dpkg --compare-versions \
