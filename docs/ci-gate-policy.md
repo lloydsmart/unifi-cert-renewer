@@ -2,7 +2,7 @@
 
 Every pull request to `main` starts `Pull request CI` without a path filter.
 The stable final check remains `Required CI gate`. Actions lint, Markdown lint,
-Ruff, the complete Python 3.12/3.14 matrix, dependency-lock freshness, Gitleaks
+Ruff, the complete Python 3.12/3.14/3.15 matrix, dependency-lock freshness, Gitleaks
 full-history scanning, and dependency vulnerability scanning run on every PR.
 The jobs use read-only repository permissions and no inherited secrets.
 
@@ -40,14 +40,14 @@ are verified and a later cleanup removes those duplicate PR triggers.
 Reusable workflows expose a `passed` output only when every required internal
 job reports success. The aggregate gate checks that output as well as the
 workflow result. Aruba's nested deployment workflows propagate both levels.
-Python matrix failure remains a failure; `fail-fast: false` permits both
+Python matrix failure remains a failure; `fail-fast: false` permits all
 runtimes to finish and does not permit a failed result. No `continue-on-error`
 is used. The gate uses `always()` and a five-minute timeout; a cancelled or
 unavailable gate cannot be treated as a passing gate. New commits cancel older
 PR runs, with the newest commit requiring its own successful check.
 
-The identical `scripts/ci_policy.py`, `tests/test_ci_policy.py`, and orchestrator
-in both projects define the shared contract. Tests exercise rejected results,
+The policy evaluator, its tests, and the orchestrator define the shared result
+contract, with product-specific runtime coverage. Tests exercise rejected results,
 internal-job output wiring, malformed inputs, renamed/deleted paths, and the
 no-change case. Product-specific build commands and dependency locks remain
 separate. All runner jobs in this PR graph have explicit timeouts.

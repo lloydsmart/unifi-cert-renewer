@@ -79,7 +79,8 @@ docker run --rm \
     --security-opt no-new-privileges:true \
     --entrypoint python \
     "$renewer_image" \
-    -c 'import importlib.metadata as metadata; import importlib.util as util
+    -c 'import importlib.metadata as metadata; import importlib.util as util; import sys
+assert sys.version_info[:2] == (3, 15), f"Unexpected renewer Python runtime: {sys.version}"
 for name in ("pip", "ensurepip", "setuptools", "pkg_resources", "msgpack"):
     assert util.find_spec(name) is None, f"Unexpected build-time tooling: {name}"
 assert not any(

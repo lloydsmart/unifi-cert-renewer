@@ -27,15 +27,16 @@ file exploit details in public issues.
 
 ## Development setup
 
-Python 3.14 is the primary development and renewer runtime version. Shared
-executor code remains compatible with Python 3.12. Use a local Python 3.14
-environment when available; CI covers both versions. A local 3.14 installation
-is not required merely to propose a documentation or narrowly scoped change.
+Python 3.15 is the primary development and renewer runtime version. Shared
+executor code remains compatible with Python 3.12, and the reviewed UniFi
+executor overlay uses distro Python 3.14. Use a local Python 3.15 environment
+when available; CI covers all three versions. A local 3.15 installation is not
+required merely to propose a documentation or narrowly scoped change.
 
 Create a virtual environment and install the committed hash-pinned locks:
 
 ```bash
-python3.14 -m venv .venv
+python3.15 -m venv .venv
 . .venv/bin/activate
 python -m pip install --require-hashes -r requirements.txt
 python -m pip install --require-hashes -r requirements-dev.txt
@@ -43,7 +44,7 @@ python -m pip install --require-hashes -r requirements-dev.txt
 
 Do not choose dependency versions independently or edit generated lock files
 by hand. When changing dependencies, regenerate locks with
-`./scripts/compile-requirements.sh` in a prepared Python 3.14 environment.
+`./scripts/compile-requirements.sh` in a prepared Python 3.15 environment.
 
 ## Required checks
 
@@ -56,11 +57,11 @@ pytest
 git diff --check
 ```
 
-CI tests Python 3.12 and 3.14, checks dependency lock freshness, scans pinned
+CI tests Python 3.12, 3.14, and 3.15, checks dependency lock freshness, scans pinned
 dependencies, and scans complete reachable Git history for secrets. The
 repository scripts `./scripts/scan-dependencies.sh` and
 `./scripts/scan-secrets.sh` provide the corresponding local checks when their
-Python 3.14 or Docker prerequisites are available. Run Markdown lint with
+Python 3.15 or Docker prerequisites are available. Run Markdown lint with
 `markdownlint-cli2 '**/*.md'` for documentation changes. Run the relevant
 deployment and container checks for changes to images, Compose definitions,
 the executor, or release packaging; see the scripts and CI workflows for

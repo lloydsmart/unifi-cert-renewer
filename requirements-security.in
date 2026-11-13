@@ -1,1 +1,3 @@
 pip-audit==2.10.1
+# Python 3.15 compatibility: avoid the removed sre_constants import.
+pip-api>=0.0.35

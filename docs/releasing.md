@@ -103,7 +103,7 @@ verification remains an additional independent requirement.
 ## Complete release qualification
 
 Every release runs the same reusable Actions lint, Markdown lint, Ruff,
-Python 3.12/3.14 full test matrix, dependency-lock freshness, dependency audit,
+Python 3.12/3.14/3.15 full test matrix, dependency-lock freshness, dependency audit,
 and full-history secret scan used by PR CI. These calls use the workflow event's
 immutable commit for checkout; they do not reuse a green result from another
 commit, consult a moving branch's check status, or apply documentation filters.
