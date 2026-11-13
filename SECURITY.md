@@ -634,8 +634,8 @@ immutable artifact digest
 
 Only a protected `v*` tag push can invoke publication. The workflow requires a
 GitHub-verified signed annotated tag that directly targets a commit reachable
-from `main`. Before building, all reusable lint, complete Python 3.12/3.14 tests,
-lock freshness, dependency audit, and full-history secret checks must pass on
+from `main`. Before building, all reusable lint, complete Python 3.12/3.14/3.15
+tests, lock freshness, dependency audit, and full-history secret checks must pass on
 the exact event commit. Every internal workflow must explicitly confirm success;
 missing or skipped checks block publication.
 

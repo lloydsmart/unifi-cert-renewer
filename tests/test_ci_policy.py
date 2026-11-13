@@ -297,11 +297,14 @@ def test_reusable_receipts_cover_every_internal_job_and_reject_bad_results(filen
 
 def test_python_matrix_and_security_jobs_remain_required():
     text, terms = workflow_receipt("test-python.yml")
-    assert "          - '3.12'" in text and "          - '3.14'" in text
+    for version in ("3.12", "3.14", "3.15"):
+        assert f"          - '{version}'" in text
+    assert "          python-version: '3.15'" in text
     assert "      fail-fast: false" in text
     assert {job for job, _, _ in terms} == {"test", "locks"}
-    _, terms = workflow_receipt("security.yml")
+    text, terms = workflow_receipt("security.yml")
     assert {job for job, _, _ in terms} == {"secrets", "dependencies"}
+    assert "          python-version: '3.15'" in text
 
 
 def test_unifi_called_validation_cannot_skip_on_old_path_filter():

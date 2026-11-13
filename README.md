@@ -291,10 +291,14 @@ See [`SECURITY.md`](SECURITY.md) for the full security model.
 
 ## Development Requirements
 
-The development and dependency-locking baseline targets Python 3.14.
+The development, dependency-locking, scanning, and renewer baseline targets
+Python 3.15.
 Shared executor code remains syntax-compatible with Python 3.12. The reviewed
-UniFi executor overlay now uses distro Python 3.14; CI continues testing the
-shared source on both Python 3.12 and 3.14.
+UniFi executor overlay uses distro Python 3.14; CI tests the shared source on
+Python 3.12, 3.14, and 3.15.
+
+The [Python 3.15 qualification record](docs/python315-qualification-2026-11-13.md)
+documents compatibility checks and the remaining release prerequisites.
 
 Direct dependencies are declared in:
 
@@ -307,7 +311,7 @@ separately.
 
 Corresponding `.txt` files are generated, hash-pinned dependency locks.
 
-To regenerate them in a correctly prepared Python 3.14 environment:
+To regenerate them in a correctly prepared Python 3.15 environment:
 
 ```bash
 ./scripts/compile-requirements.sh

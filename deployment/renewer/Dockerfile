@@ -29,7 +29,7 @@ COPY requirements.txt /opt/unifi-cert-renewer/requirements.txt
 RUN python -m pip install --no-cache-dir --require-hashes \
     -r /opt/unifi-cert-renewer/requirements.txt \
     && python -m pip uninstall --yes pip \
-    && rm -rf /usr/local/lib/python3.14/ensurepip
+    && rm -rf /usr/local/lib/python3.15/ensurepip
 
 COPY src/certificate.py src/csr.py src/opnsense_client.py src/production_renewer.py \
     src/public_key.py src/renewal_policy.py src/run_result.py src/secure_file.py src/tls_policy.py src/unifi_cert_renewer.py \

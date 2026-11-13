@@ -117,8 +117,8 @@ docker build -f deployment/renewer/Dockerfile \
   -t local/unifi-cert-renewer:reviewed .
 ```
 
-The Dockerfile pins the reviewed multi-platform manifest for the minimal
-official `python:3.14-slim-trixie` base and installs the hash-locked runtime
+The Dockerfile pins the multi-platform manifest for the minimal
+official `python:3.15-slim-trixie` base and installs the hash-locked runtime
 requirements. If that pin is intentionally updated, review the new upstream
 image and record the replacement digest. After pushing the reviewed image,
 deploy its registry digest rather than the local tag. Before publication, an
