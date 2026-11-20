@@ -11,6 +11,7 @@ RUN apt-get update \
         libapt-pkg7.0=3.2.1ubuntu0.1 \
         libbrotli1=1.2.0-3ubuntu0.1 \
         libssl3t64 openssl openssl-provider-legacy curl libcurl4t64 \
+        openjdk-25-jre-headless \
     && for package in libssl3t64 openssl openssl-provider-legacy; do \
         dpkg --compare-versions \
             "$(dpkg-query -W -f='${Version}' "$package")" \
@@ -22,6 +23,14 @@ RUN apt-get update \
             && version=$(dpkg-query -W -f='${Version}' "$package") \
             && dpkg --validate-version "$version" \
             && dpkg --compare-versions "$version" ge 8.18.0-1ubuntu2.8 \
+            || exit 1; \
+       done \
+    && for package in openjdk-25-jre-headless; do \
+        status=$(dpkg-query -W -f='${db:Status-Status}' "$package") \
+            && test "$status" = installed \
+            && version=$(dpkg-query -W -f='${Version}' "$package") \
+            && dpkg --validate-version "$version" \
+            && dpkg --compare-versions "$version" ge 25.0.5.1+2-1~26.04.1 \
             || exit 1; \
        done \
     && python3 -m venv /opt/unifi-cert-renewer/venv \
