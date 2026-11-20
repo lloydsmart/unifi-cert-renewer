@@ -684,29 +684,28 @@ Security properties that require negative tests include:
 
 ## Current Accepted Risks
 
-On 2026-11-09 Lloyd Smart, as owner and reviewer, explicitly approved all
-38 exact inherited UniFi Java findings: **27 HIGH and 11 CRITICAL**. This renews
-the 32 records that expired on 25 October and adds six individually reviewed
-findings. The approval expressly includes the unknown production MongoDB
-Snappy configuration and its remaining availability risk.
+On 20 November 2026 Lloyd Smart, as owner and reviewer, approved temporary
+acceptance of the 38 exact inherited UniFi Java findings (**27 HIGH and
+11 CRITICAL**) until **00:00 UTC on 27 November 2026, exclusive**. The earlier
+approval expired at 00:00 UTC on 16 November. The new decision expressly
+includes the availability risk from the unknown production MongoDB compressor
+configuration.
 
 The [exception registry](.security/container-exceptions.json) scopes each record
 to `linux/amd64`, the exact `10.6.106-ls147` upstream index digest
 `sha256:5f5e76c95b5bd4becb0cdb1b96ef53a468e75ca0f7a096ca5c24fc30998b382a`,
 and its exact result class/type/target, advisory, package name/ID, installed
-version, path, scanner severity and fixed-version text. Acceptance does not
-transfer to another digest, platform, package identity, advisory alias or
-introduced finding. All 38 exceptions expire exclusively at
-**00:00 UTC on 2026-11-16**. The scanner fails closed at expiry; there is no
-automatic extension.
+version, path, scanner severity and fixed-version text. Introduced findings
+always block. The scanner rejects expired entries and enforces exact matching
+for each accepted finding.
 
-The [9 November review and decision](docs/vendor-finding-review-2026-11-09.md)
-records the full accepted set, newer vendor-image comparisons and targeted
-Snappy investigation. The reviewed `10.6.106-ls151`, `10.6.109-ls152` and
-`10.6.109-ls153` images retain all 38 Java findings and identical hashes for
-the 14 affected libraries. Independently replacing bundled JARs remains
-unqualified. The earlier [18 October decision](docs/vendor-finding-review-2026-10-18.md)
-and its linked reviews remain historical evidence, not current approval.
+The [20 November review](docs/vendor-finding-review-2026-11-20.md) records
+the decision and scan results. The examined ls155 vendor image retains the
+same 38 findings and identical bytes at all 14 affected JAR paths.
+Independent replacement of bundled JARs remains unqualified. The rebuilt
+UniFi image fixes the separate OpenJDK finding, `CVE-2026-114938`, using the
+Ubuntu security update. The [9 November review](docs/vendor-finding-review-2026-11-09.md)
+records the earlier finding-specific evidence and bounded Snappy tests.
 
 For `CVE-2026-108106`, the observed inform path validates compressed input
 before allocation and limits incoming requests to 10 MiB. Valid compressed
@@ -724,7 +723,7 @@ over `db.mongo.uri`. Report only compressor names/status, not credentials or
 connection strings. If Snappy is configured, reopen the risk decision
 immediately and assess a separately authorised mitigation or vendor fix.
 
-On 9 November the operator confirmed that management, guest-portal and
+On 20 November the operator reported that management, guest-portal and
 device-facing endpoints remain restricted to internal LAN/VPN networks, with
 no known incident. These reports were not independently verified. Malicious
 or compromised permitted clients, devices, peers and stored content remain

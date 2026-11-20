@@ -402,7 +402,7 @@ def test_current_unifi_exception_registry_matches_approved_review():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 11, 9))
+    entries = comparator.load_exceptions(registry, today=date(2026, 11, 20))
     identifiers = {entry.identifier for entry in entries}
 
     assert len(entries) == len(identifiers) == 38
@@ -427,8 +427,8 @@ def test_current_unifi_exception_registry_matches_approved_review():
         )
         assert entry.platform == "linux/amd64"
         assert entry.owner == entry.reviewed_by == "Lloyd Smart"
-        assert entry.reviewed_on == date(2026, 11, 9)
-        assert entry.expires_on == date(2026, 11, 16)
+        assert entry.reviewed_on == date(2026, 11, 20)
+        assert entry.expires_on == date(2026, 11, 27)
         assert entry.tracking_url == (
             "https://github.com/lloydsmart/unifi-cert-renewer/issues/63"
         )
@@ -584,14 +584,14 @@ def test_current_unifi_exception_registry_matches_approved_review():
             "fixed_version": fixed,
         }
     with pytest.raises(comparator.InvalidReportError, match="expired"):
-        comparator.load_exceptions(registry, today=date(2026, 11, 16))
+        comparator.load_exceptions(registry, today=date(2026, 11, 27))
 
 
 def test_current_unifi_registry_matches_exact_findings_without_alias_transfer():
     registry = (
         Path(__file__).resolve().parents[1] / ".security/container-exceptions.json"
     )
-    entries = comparator.load_exceptions(registry, today=date(2026, 11, 15))
+    entries = comparator.load_exceptions(registry, today=date(2026, 11, 26))
     assert all(entry.finding.fixed_version for entry in entries)
     comparison = comparator.Comparison(
         inherited=tuple(entry.finding for entry in entries),
