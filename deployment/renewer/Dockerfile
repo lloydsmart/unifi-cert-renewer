@@ -3,11 +3,13 @@
 FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # The pinned upstream predates Trixie's CVE-2026-103111 PCRE2 security update.
+# It also predates DSA-6657-1 for libzstd1 (CVE-2026-124851).
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends --only-upgrade \
         apt=3.0.4 \
         libapt-pkg7.0=3.0.4 \
         libpcre2-8-0=10.46-1~deb13u3 \
+        libzstd1=1.5.7+dfsg-1+deb13u1 \
         zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
